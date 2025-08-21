@@ -40,7 +40,7 @@ public class PlantillaSMSController {
 
     @PostMapping("/generate/messages")
     public ResponseEntity<Resource> generateMessages(@RequestBody GenerateMessagesRequest generateMessagesRequest) {
-        File file = plantillaSMSService.getFileByPlantillaWithData2(generateMessagesRequest);
+        File file = plantillaSMSService.getFileByPlantillaWithData(generateMessagesRequest);
 
         if (file != null && file.exists()) {
             Resource resource = new FileSystemResource(file);
@@ -56,6 +56,9 @@ public class PlantillaSMSController {
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+
+
+
 
     @PutMapping("/update")
     public ResponseEntity<PlantillaSMS> updateTemplate(@RequestBody PlantillaSMSToUpdateRequest plantillaSMSToUpdateRequest) {

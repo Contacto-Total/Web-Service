@@ -105,6 +105,7 @@ public class RangoRepository {
             hasPreviousQuery = true;
         }
 
+
         queryStr.append(") B WHERE DOCUMENTO NOT IN (SELECT DOCUMENTO FROM blacklist WHERE DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN FECHA_INICIO AND FECHA_FIN) ")
                 .append("AND TELEFONOCELULAR NOT IN (SELECT DISTINCT Telefono FROM GESTION_HISTORICA_BI WHERE Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')) ")
                 .append("AND TELEFONOCELULAR != '' ")
