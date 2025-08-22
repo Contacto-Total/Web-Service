@@ -1,0 +1,8 @@
+package com.foh.contacto_total_web_service.iam.infrastructure.hashing.bcrypt;
+
+import com.foh.contacto_total_web_service.iam.application.internal.outboundservices.hashing.HashingService;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+public interface BCryptHashingService extends HashingService, PasswordEncoder {
+
+}
