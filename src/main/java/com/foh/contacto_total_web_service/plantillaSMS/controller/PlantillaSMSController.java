@@ -40,7 +40,7 @@ public class PlantillaSMSController {
 
     @PostMapping("/generate/messages")
     public ResponseEntity<Resource> generateMessages(@RequestBody GenerateMessagesRequest generateMessagesRequest) {
-        File file = plantillaSMSService.getFileByPlantillaWithData(generateMessagesRequest);
+        File file = plantillaSMSService.getFileByPlantillaWithData2(generateMessagesRequest);
 
         if (file != null && file.exists()) {
             Resource resource = new FileSystemResource(file);
