@@ -282,4 +282,92 @@ public class SMSRepository {
         Query query = entityManager.createNativeQuery(sql.toString(), PeopleForSMSResponse.class);
         return query.getResultList();
     }
+
+
+    // NUEVA FUNCIONALIDAD
+
+    public List<PeopleForSMSResponse> getPeopleForCustomSMS(boolean onlyLtde, String periodo) {
+
+        String sql;
+
+        if (onlyLtde) {
+            // 👉 Solo LTDE
+            sql = """
+            SELECT
+                IDENTITY_CODE,
+                TELEFONOCELULAR,
+                CONCAT(
+                    UPPER(LEFT(LOWER(NOMBRE), 1)),
+                    SUBSTRING(LOWER(NOMBRE), 2)
+                ) AS NOMBRE,
+
+                CASE
+                    WHEN LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 THEN
+                        CASE
+                            WHEN (CEIL(LTDESPECIAL) + 200) < CEIL(SLDACTUALCONS) 
+                                THEN CEIL(LTDESPECIAL) + 200
+                            ELSE CEIL(LTDESPECIAL)
+                        END
+                END AS LTDE_FINAL,
+                CEIL(SLDACTUALCONS) AS DEUDA_TOTAL,
+                '915168552'
+            FROM TEMP_MERGE
+            WHERE ((LTDESPECIAL <> '' AND LTDESPECIAL > 0))
+              AND SLDCAPITALASIG > 0
+              AND TRIM(TELEFONOCELULAR) <> ''
+              AND TELEFONOCELULAR IS NOT NULL
+              AND DOCUMENTO NOT IN (SELECT DOCUMENTO FROM PROMESAS_HISTORICO WHERE PERIODO = :periodo)
+              AND DOCUMENTO NOT IN (SELECT DOCUMENTO FROM COMPROMISOS)
+              AND RANGOMORAPROYAG = 'Tramo 5'
+              AND DOCUMENTO NOT IN (SELECT DOCUMENTO FROM blacklist)
+              AND SLDACTUALCONS > 0
+              AND SLDACTUALCONS > COALESCE(LTDESPECIAL, 0)
+            """;
+        } else {
+            // 👉 LTDE o LTD
+            sql = """
+            SELECT
+                IDENTITY_CODE,
+                TELEFONOCELULAR,
+                CONCAT(
+                    UPPER(LEFT(LOWER(NOMBRE), 1)),
+                    SUBSTRING(LOWER(NOMBRE), 2)
+                ) AS NOMBRE,
+
+                CASE
+                    WHEN LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 THEN
+                        CASE
+                            WHEN (CEIL(LTDESPECIAL) + 200) < CEIL(SLDACTUALCONS) 
+                                THEN CEIL(LTDESPECIAL) + 200
+                            ELSE CEIL(LTDESPECIAL)
+                        END
+                    ELSE
+                        CASE
+                            WHEN (CEIL(`5`) + 200) < CEIL(SLDACTUALCONS) 
+                                THEN CEIL(`5`) + 200
+                            ELSE CEIL(`5`)
+                        END
+                END AS LTD_FINAL,
+                CEIL(SLDACTUALCONS) AS DEUDA_TOTAL,
+                '915168552'
+            FROM TEMP_MERGE
+            WHERE ((LTDESPECIAL <> '' AND LTDESPECIAL > 0) or (`5` <> '' and `5` > 0))
+              AND SLDCAPITALASIG > 0
+              AND TRIM(TELEFONOCELULAR) <> ''
+              AND TELEFONOCELULAR IS NOT NULL
+              AND DOCUMENTO NOT IN (SELECT DOCUMENTO FROM PROMESAS_HISTORICO WHERE PERIODO = :periodo)
+              AND DOCUMENTO NOT IN (SELECT DOCUMENTO FROM COMPROMISOS)
+              AND RANGOMORAPROYAG = 'Tramo 5'
+              AND DOCUMENTO NOT IN (SELECT DOCUMENTO FROM blacklist)
+              AND SLDACTUALCONS > 0
+              AND SLDACTUALCONS > COALESCE(LTDESPECIAL, 0)
+              AND SLDACTUALCONS > COALESCE(`5`, 0)
+            """;
+        }
+
+        var query = entityManager.createNativeQuery(sql, PeopleForSMSResponse.class);
+        query.setParameter("periodo", periodo);
+        return query.getResultList();
+
+    }
 }

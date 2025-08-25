@@ -15,6 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.File;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @CrossOrigin(origins = "**" , maxAge = 3600)
@@ -71,4 +73,34 @@ public class PlantillaSMSController {
         plantillaSMSService.deletePlantilla(id);
         return new ResponseEntity<>(HttpStatus.NO_CONTENT);
     }
+
+
+    // NUEVO
+
+    @GetMapping("/custom-sms")
+    public ResponseEntity<Resource> generateCustomSMS(
+            @RequestParam boolean onlyLtde) {
+
+        String periodo = YearMonth.now().format(DateTimeFormatter.ofPattern("yyyyMM"));
+
+        File file = plantillaSMSService.getFileByCustomSMS(onlyLtde, periodo);
+
+        if (file != null && file.exists()) {
+            Resource resource = new FileSystemResource(file);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + file.getName());
+            headers.add(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE); // 👈 obligatorio
+
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .body(resource);
+        } else {
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+
+
+
 }

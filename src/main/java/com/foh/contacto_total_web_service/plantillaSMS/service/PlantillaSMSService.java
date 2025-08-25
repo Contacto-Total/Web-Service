@@ -17,4 +17,9 @@ public interface PlantillaSMSService {
     public abstract File getFileByPlantillaWithData2(GenerateMessagesRequest generateMessagesRequest);
     public abstract PlantillaSMS updatePlantilla(PlantillaSMSToUpdateRequest plantillaSMSToUpdateRequest);
     public abstract void deletePlantilla(Integer id);
+
+    // NUEVO
+    public abstract File getFileByCustomSMS(boolean onlyLtde, String periodo);
+
+
 }

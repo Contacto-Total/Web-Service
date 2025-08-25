@@ -258,4 +258,50 @@ public class PlantillaSMSServiceImpl implements PlantillaSMSService {
         PlantillaSMS plantilla = getPlantillaById(id);
         plantillaSMSRepository.delete(plantilla);
     }
+
+    // NUEVO
+
+    @Override
+    public File getFileByCustomSMS(boolean onlyLtde, String periodo) {
+        // si no necesitás plantilla, podés armar el Excel directo
+        List<PeopleForSMSResponse> peopleData = smsRepository.getPeopleForCustomSMS(onlyLtde, periodo);
+
+        Workbook workbook = new XSSFWorkbook();
+        Sheet sheet = workbook.createSheet("Mensajes SMS");
+
+        Row headerRow = sheet.createRow(0);
+        headerRow.createCell(0).setCellValue("CELULAR");
+        headerRow.createCell(1).setCellValue("var1");
+        headerRow.createCell(2).setCellValue("var2");
+
+        for (int i = 3; i <= 15; i++) {
+            headerRow.createCell(i).setCellValue("var" + (i));
+        }
+
+        int rowNum = 1;
+        for (PeopleForSMSResponse person : peopleData) {
+            Row row = sheet.createRow(rowNum++);
+            row.createCell(0).setCellValue(person.getTelefonoCelular());
+            row.createCell(1).setCellValue(person.getNombre());
+            row.createCell(2).setCellValue(person.getDeudaTotal());
+        }
+
+        File file = new File("Mensajes_SMS_Custom.xlsx");
+        try (FileOutputStream fileOut = new FileOutputStream(file)) {
+            workbook.write(fileOut);
+        } catch (IOException e) {
+            throw new RuntimeException("Error al crear el archivo Excel", e);
+        } finally {
+            try {
+                workbook.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        return file;
+    }
+
+
+
 }
