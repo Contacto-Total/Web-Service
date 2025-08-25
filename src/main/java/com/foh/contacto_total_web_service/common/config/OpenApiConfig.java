@@ -10,30 +10,34 @@ import io.swagger.v3.oas.models.servers.Server;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.List;
+
 @Configuration
 public class OpenApiConfig {
+
     @Bean
     public OpenAPI controlTotalServicePlatformOpenApi() {
-        var openApi = new OpenAPI();
-        openApi.info(new Info()
+        final String securitySchemeName = "bearerAuth";
+
+        return new OpenAPI()
+                .info(new Info()
                         .title("Maintenance Service Platform API")
                         .description("Control Total Service Platform application REST API documentation.")
                         .version("v1.0.0")
                         .license(new License()
                                 .name("Apache 2.0")
-                                .url("https://springdoc.org")));
-        final String securitySchemeName = "bearerAuth";
-
-        openApi.addSecurityItem(new SecurityRequirement()
-                        .addList(securitySchemeName))
+                                .url("https://springdoc.org")))
+                .addSecurityItem(new SecurityRequirement().addList(securitySchemeName))
                 .components(new Components()
                         .addSecuritySchemes(securitySchemeName,
                                 new SecurityScheme()
                                         .name(securitySchemeName)
                                         .type(SecurityScheme.Type.HTTP)
                                         .scheme("bearer")
-                                        .bearerFormat("JWT")));
-        return openApi;
+                                        .bearerFormat("JWT")))
+                .servers(List.of(
+                        new Server().url("https://perfect-charmed-colt.ngrok-free.app").description("Ngrok HTTPS"),
+                        new Server().url("http://localhost:8080").description("Local Dev")
+                ));
     }
-
 }
