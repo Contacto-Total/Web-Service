@@ -483,6 +483,24 @@ public class SMSRepository {
         sql.append(" AND TELEFONOCELULAR IS NOT NULL ");
         sql.append(" AND SLDCAPITALASIG > 0 ");
 
+        boolean isTramo5 = req.getTramos()!=null && req.getTramos().contains(5);
+
+        if (isTramo5) {
+            sql.append(" AND RANGOMORAPROYAG = 'Tramo 5' ");
+            sql.append(" AND SLDACTUALCONS > 0 ");
+
+            if (onlyLtde) {
+                // Solo LTDE disponible y menor a deuda
+                sql.append(" AND LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 ");
+                sql.append(" AND SLDACTUALCONS > COALESCE(LTDESPECIAL, 0) ");
+            } else {
+                // Alguno de los dos disponible y ambos por debajo de deuda
+                sql.append(" AND ((LTDESPECIAL <> '' AND LTDESPECIAL > 0) OR (`5` <> '' AND `5` > 0)) ");
+                sql.append(" AND SLDACTUALCONS > COALESCE(LTDESPECIAL, 0) ");
+                sql.append(" AND SLDACTUALCONS > COALESCE(`5`, 0) ");
+            }
+        }
+
         // Caso BAJA 30 en Tramo 3: aplicar filtros adicionales
         if (wantsBaja30 && tramo3) {
             // Asegurar monto BAJA30 > 0 (columna `2`)
@@ -576,8 +594,11 @@ public class SMSRepository {
         if (e.contains("SLDMORA")) return "SALDO_MORA";
         if (e.contains("SLDACTUALCONS")) return "DEUDA_TOTAL";
         if (e.contains("NOMBRE")) return "NOMBRE";
+        // NUEVO:
+        if (e.contains("LTDESPECIAL") || e.contains("`5`")) return "LTD";
         return "COL";
     }
+
 
 
 
