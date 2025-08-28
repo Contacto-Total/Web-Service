@@ -5,6 +5,10 @@ import com.foh.contacto_total_web_service.plantillaSMS.dto.PlantillaSMSRequest;
 import com.foh.contacto_total_web_service.plantillaSMS.dto.PlantillaSMSToUpdateRequest;
 import com.foh.contacto_total_web_service.plantillaSMS.model.PlantillaSMS;
 import com.foh.contacto_total_web_service.plantillaSMS.service.PlantillaSMSService;
+import com.foh.contacto_total_web_service.sms_template.dto.DynamicPreviewRequest;
+import com.foh.contacto_total_web_service.sms_template.dto.DynamicPreviewResponse;
+import com.foh.contacto_total_web_service.sms_template.dto.DynamicPreviewRow;
+import com.foh.contacto_total_web_service.sms_template.dto.DynamicQueryRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -80,6 +84,7 @@ public class PlantillaSMSController {
     public ResponseEntity<Resource> generateCustomSMS(
             @RequestParam boolean onlyLtde) {
 
+        System.out.println("Inicio método getFileByCustomSMS");
         String periodo = YearMonth.now().format(DateTimeFormatter.ofPattern("yyyyMM"));
 
         File file = plantillaSMSService.getFileByCustomSMS(onlyLtde, periodo);
@@ -98,4 +103,28 @@ public class PlantillaSMSController {
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+
+
+
+    // ACTRUALIZADO
+
+    @PostMapping("/dynamic/preview")
+    public ResponseEntity<DynamicPreviewResponse> preview(@RequestBody DynamicQueryRequest req) {
+        var resp = plantillaSMSService.previewDynamic(req);
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/dynamic/export")
+    public ResponseEntity<Resource> export(@RequestBody DynamicQueryRequest req) {
+        File file = plantillaSMSService.exportDynamic(req);
+        if (file != null && file.exists()) {
+            var resource = new FileSystemResource(file);
+            HttpHeaders headers = new HttpHeaders();
+            headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + file.getName());
+            headers.add(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE);
+            return ResponseEntity.ok().headers(headers).body(resource);
+        }
+        return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
 }

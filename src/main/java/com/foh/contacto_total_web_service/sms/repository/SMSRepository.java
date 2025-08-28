@@ -1,13 +1,17 @@
 package com.foh.contacto_total_web_service.sms.repository;
 
 import com.foh.contacto_total_web_service.sms.dto.PeopleForSMSResponse;
+import com.foh.contacto_total_web_service.sms_template.dto.DynamicPreviewRequest;
+import com.foh.contacto_total_web_service.sms_template.dto.DynamicPreviewRow;
+import com.foh.contacto_total_web_service.sms_template.dto.DynamicQueryRequest;
+import com.foh.contacto_total_web_service.sms_template.dto.PeopleForCustomSMSResponse;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
-import java.util.StringJoiner;
+import java.math.BigDecimal;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Repository
@@ -285,12 +289,11 @@ public class SMSRepository {
 
     // NUEVA FUNCIONALIDAD
 
-    public List<PeopleForSMSResponse> getPeopleForCustomSMS(boolean onlyLtde, String periodo) {
+    public List<PeopleForCustomSMSResponse> getPeopleForCustomSMS(boolean onlyLtde, String periodo) {
 
         String sql;
 
         if (onlyLtde) {
-            // 👉 Solo LTDE
             sql = """
             SELECT
                 IDENTITY_CODE,
@@ -323,7 +326,6 @@ public class SMSRepository {
               AND SLDACTUALCONS > COALESCE(LTDESPECIAL, 0)
             """;
         } else {
-            // 👉 LTDE o LTD
             sql = """
             SELECT
                 IDENTITY_CODE,
@@ -364,9 +366,170 @@ public class SMSRepository {
             """;
         }
 
-        var query = entityManager.createNativeQuery(sql, PeopleForSMSResponse.class);
+        var query = entityManager.createNativeQuery(sql);
         query.setParameter("periodo", periodo);
-        return query.getResultList();
+
+        List<Object[]> results = query.getResultList();
+
+        List<PeopleForCustomSMSResponse> responseList = new ArrayList<>();
+
+        for (Object[] row : results) {
+            String documento = (String) row[0];
+            String telefonoCelular = (String) row[1];
+            String nombre = (String) row[2];
+            BigDecimal ltdeFinal = row[3] != null ? new BigDecimal(row[3].toString()) : null;
+            BigDecimal deudaTotal = row[4] != null ? new BigDecimal(row[4].toString()) : null;
+            String remitente = (String) row[5];
+
+            responseList.add(new PeopleForCustomSMSResponse(documento, telefonoCelular, nombre, ltdeFinal, deudaTotal, remitente));
+        }
+
+        return responseList;
 
     }
+
+    // Actualizado
+
+
+
+    private Long toLong(Object n) {
+        if (n == null) return null;
+        if (n instanceof Number) return ((Number) n).longValue();
+        try { return Long.parseLong(n.toString()); } catch (Exception e) { return null; }
+    }
+
+    public List<Map<String,Object>> runDynamicQuery(DynamicQueryRequest req, Integer limit) {
+        // 1) map de variables -> expresiones SQL
+        Map<String,String> col = Map.of(
+                "nombre",     "CONCAT(UPPER(LEFT(LOWER(NOMBRE),1)), SUBSTRING(LOWER(NOMBRE),2))",
+                "baja30",     "CEIL(`2`)",
+                "saldomora",  "CEIL(SLDMORA)",
+                "deudatotal", "CEIL(SLDACTUALCONS)"
+
+        );
+
+        // 2) SELECT: siempre CELULAR primero y luego variables con alias legible
+        StringBuilder sql = new StringBuilder(
+                "SELECT CAST(TELEFONOCELULAR AS CHAR) AS CELULAR"
+        );
+        if (req.getVariables() != null && !req.getVariables().isEmpty()) {
+            sql.append(", ");
+            sql.append(
+                    req.getVariables().stream()
+                            .map(v -> col.getOrDefault(v.toLowerCase(), v))
+                            .map(expr -> expr + " AS " + aliasFromExpr(expr))
+                            .collect(Collectors.joining(", "))
+            );
+        }
+        sql.append(" FROM TEMP_MERGE WHERE 1=1 ");
+
+        boolean wantsBaja30 = req.getVariables()!=null &&
+                req.getVariables().stream().anyMatch(v -> v != null && v.equalsIgnoreCase("baja30"));
+        boolean wantsSaldoMora = req.getVariables()!=null &&
+                req.getVariables().stream().anyMatch(v -> v != null && v.equalsIgnoreCase("saldoMora"));
+        boolean tramo3 = req.getTramos()!=null && req.getTramos().contains(3);
+
+        // 3) filtros base
+        sql.append(" AND TRIM(COALESCE(TELEFONOCELULAR,'')) <> '' ");
+        sql.append(" AND TELEFONOCELULAR IS NOT NULL ");
+        sql.append(" AND SLDCAPITALASIG > 0 ");
+
+        // Caso BAJA 30 en Tramo 3: aplicar filtros adicionales
+        if (wantsBaja30 && tramo3) {
+            // Asegurar monto BAJA30 > 0 (columna `2`)
+            sql.append(" AND COALESCE(`2`,0) > 0 ");
+            sql.append(" AND TRIM(COALESCE(`2`,'')) <> '' ");
+
+            // Mantener tu lógica de NO CONTENIDO de PAYS_TEMP
+            sql.append(" AND DOCUMENTO IN (");
+            sql.append("   SELECT CASE ");
+            sql.append("     WHEN A.IDENTITY_CODE LIKE 'D%' THEN RIGHT(A.IDENTITY_CODE,8) ");
+            sql.append("     WHEN A.IDENTITY_CODE LIKE 'C%' THEN TRIM(LEADING '0' FROM REPLACE(A.IDENTITY_CODE,'C','0')) ");
+            sql.append("     ELSE A.IDENTITY_CODE ");
+            sql.append("   END ");
+            sql.append("   FROM PAYS_TEMP A ");
+            sql.append("   WHERE CONTENCION = 'NO CONTENIDO'");
+            sql.append(" ) ");
+        }
+
+        // >>> SALDO MORA: si quieres replicar tu query normal, aplica lo MISMO <<<
+        if (wantsSaldoMora && tramo3) {
+            sql.append(" AND COALESCE(`2`,0) > 0 ");
+            sql.append(" AND TRIM(COALESCE(`2`,'')) <> '' ");
+            sql.append(" AND DOCUMENTO IN (");
+            sql.append("   SELECT CASE ");
+            sql.append("     WHEN A.IDENTITY_CODE LIKE 'D%' THEN RIGHT(A.IDENTITY_CODE,8) ");
+            sql.append("     WHEN A.IDENTITY_CODE LIKE 'C%' THEN TRIM(LEADING '0' FROM REPLACE(A.IDENTITY_CODE,'C','0')) ");
+            sql.append("     ELSE A.IDENTITY_CODE ");
+            sql.append("   END ");
+            sql.append("   FROM PAYS_TEMP A WHERE CONTENCION = 'NO CONTENIDO'");
+            sql.append(" ) ");
+        }
+
+
+        // 4) filtros del request
+        if (req.getTramos()!=null && !req.getTramos().isEmpty()) {
+            String in = req.getTramos().stream()
+                    .map(t -> "'Tramo " + t + "'")
+                    .collect(Collectors.joining(","));
+            sql.append(" AND RANGOMORAPROYAG IN ("+in+") ");
+        }
+        if (req.getDiasVenc()!=null && !req.getDiasVenc().isEmpty()) {
+            String in = req.getDiasVenc().stream()
+                    .map(String::valueOf)
+                    .collect(Collectors.joining(","));
+            sql.append(" AND DAY(FECVENCIMIENTO) IN ("+in+") ");
+        }
+        if (Boolean.TRUE.equals(req.getOnlyLtde())) {
+            sql.append(" AND LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 ");
+            sql.append(" AND SLDACTUALCONS > COALESCE(LTDESPECIAL,0) ");
+        }
+        if (Boolean.TRUE.equals(req.getExcluirPromesas())) {
+            sql.append(" AND DOCUMENTO NOT IN (SELECT DOCUMENTO FROM PROMESAS_HISTORICO WHERE PERIODO = DATE_FORMAT(CURDATE(), '%Y%m')) ");
+        }
+        if (Boolean.TRUE.equals(req.getExcluirCompromisos())) {
+            sql.append(" AND DOCUMENTO NOT IN (SELECT DOCUMENTO FROM COMPROMISOS) ");
+        }
+        if (Boolean.TRUE.equals(req.getExcluirBlacklist())) {
+            sql.append(" AND DOCUMENTO NOT IN (SELECT DOCUMENTO FROM blacklist) ");
+        }
+        if (limit != null && limit > 0) {
+            sql.append(" LIMIT ").append(limit);
+        }
+        // --- DEBUG: imprime la query generada ---
+        System.out.println("===== SQL DINÁMICA GENERADA =====");
+        System.out.println(sql.toString());
+        System.out.println("=================================");
+
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = entityManager.createNativeQuery(sql.toString()).getResultList();
+
+        // 5) mapear: r[0] = CELULAR, luego variables desde r[1]
+        List<Map<String,Object>> out = new ArrayList<>();
+        for (Object[] r : rows) {
+            Map<String,Object> m = new LinkedHashMap<>();
+            m.put("celular", r[0]); // siempre incluimos el celular
+
+            for (int i = 0; i < (req.getVariables()==null?0:req.getVariables().size()); i++) {
+                String v = req.getVariables().get(i); // nombre, baja30, ...
+                m.put(v, r[i + 1]);                   // OFFSET +1
+            }
+            out.add(m);
+        }
+        return out;
+    }
+
+
+    private String aliasFromExpr(String expr) {
+        String e = expr.toUpperCase();
+        if (e.contains("TELEFONOCELULAR")) return "CELULAR";
+        if (e.contains("`2`")) return "BAJA30";
+        if (e.contains("SLDMORA")) return "SALDO_MORA";
+        if (e.contains("SLDACTUALCONS")) return "DEUDA_TOTAL";
+        if (e.contains("NOMBRE")) return "NOMBRE";
+        return "COL";
+    }
+
+
+
 }

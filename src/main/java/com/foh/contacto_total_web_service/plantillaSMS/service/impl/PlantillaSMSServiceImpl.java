@@ -11,6 +11,7 @@ import com.foh.contacto_total_web_service.compromiso.repository.CompromisoReposi
 import com.foh.contacto_total_web_service.plantillaSMS.repository.PlantillaSMSRepository;
 import com.foh.contacto_total_web_service.sms.repository.SMSRepository;
 import com.foh.contacto_total_web_service.plantillaSMS.service.PlantillaSMSService;
+import com.foh.contacto_total_web_service.sms_template.dto.*;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -21,9 +22,15 @@ import org.springframework.stereotype.Service;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.Month;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class PlantillaSMSServiceImpl implements PlantillaSMSService {
@@ -264,7 +271,7 @@ public class PlantillaSMSServiceImpl implements PlantillaSMSService {
     @Override
     public File getFileByCustomSMS(boolean onlyLtde, String periodo) {
         // si no necesitás plantilla, podés armar el Excel directo
-        List<PeopleForSMSResponse> peopleData = smsRepository.getPeopleForCustomSMS(onlyLtde, periodo);
+        List<PeopleForCustomSMSResponse> peopleData = smsRepository.getPeopleForCustomSMS(onlyLtde, periodo);
 
         Workbook workbook = new XSSFWorkbook();
         Sheet sheet = workbook.createSheet("Mensajes SMS");
@@ -279,11 +286,17 @@ public class PlantillaSMSServiceImpl implements PlantillaSMSService {
         }
 
         int rowNum = 1;
-        for (PeopleForSMSResponse person : peopleData) {
+        for (PeopleForCustomSMSResponse person : peopleData) {
             Row row = sheet.createRow(rowNum++);
             row.createCell(0).setCellValue(person.getTelefonoCelular());
             row.createCell(1).setCellValue(person.getNombre());
-            row.createCell(2).setCellValue(person.getDeudaTotal());
+
+            BigDecimal deudaTotal = person.getDeudaTotal();
+            if (deudaTotal != null) {
+                row.createCell(2).setCellValue(deudaTotal.doubleValue());
+            } else {
+                row.createCell(2).setCellValue(0.0);
+            }
         }
 
         File file = new File("Mensajes_SMS_Custom.xlsx");
@@ -301,4 +314,113 @@ public class PlantillaSMSServiceImpl implements PlantillaSMSService {
 
         return file;
     }
+
+    // ACTUALIZADO
+
+
+    private Optional<String> findTemplateByVariables(List<String> vars) {
+        // normaliza a minúsculas y llaves
+        var need = vars.stream()
+                .map(v -> "{"+v.toLowerCase()+"}")
+                .collect(Collectors.toSet());
+
+        return plantillaSMSRepository.findAll().stream()
+                .map(PlantillaSMS::getTemplate)
+                .filter(tpl -> {
+                    String t = tpl.toLowerCase();
+                    for (String ph : need) if (!t.contains(ph)) return false;
+                    return true;
+                })
+                .findFirst();
+    }
+
+    @Override
+    public DynamicPreviewResponse previewDynamic(DynamicQueryRequest req) {
+        int limit = (req.getLimitPreview()==null || req.getLimitPreview()<1) ? 1 : req.getLimitPreview();
+        var rows = smsRepository.runDynamicQuery(req, limit);
+
+        var resp = new DynamicPreviewResponse();
+        if (!rows.isEmpty()) {
+            var values = rows.get(0);
+            resp.setValues(values);
+
+            String tpl = null;
+            if (req.getTemplateName()!=null && !req.getTemplateName().isBlank()) {
+                tpl = plantillaSMSRepository.findByName(req.getTemplateName())
+                        .map(PlantillaSMS::getTemplate).orElse(null);
+            } else if (req.getVariables()!=null && !req.getVariables().isEmpty()) {
+                tpl = findTemplateByVariables(req.getVariables()).orElse(null);
+            }
+
+            if (tpl != null) resp.setPreviewText(renderWithValues(tpl, values));
+        }
+        return resp;
+    }
+
+    private String renderWithValues(String tpl, Map<String,Object> values) {
+        String out = tpl;
+        for (var e : values.entrySet()) {
+            String key = e.getKey();
+            String val = String.valueOf(e.getValue()==null ? "" : e.getValue());
+            out = out.replaceAll("(?i)\\{" + java.util.regex.Pattern.quote(key) + "\\}",
+                    java.util.regex.Matcher.quoteReplacement(val));
+        }
+        out = out.replaceAll("(?i)\\{dia\\}",
+                String.valueOf(java.time.LocalDate.now().getDayOfMonth()));
+        return out;
+    }
+
+    @Override
+    public File exportDynamic(DynamicQueryRequest req) {
+        var rows = smsRepository.runDynamicQuery(req, null); // SIN LÍMITE
+
+        var wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook();
+        var sh = wb.createSheet("Mensajes SMS");
+
+
+        // Fila 1 (VARs)
+        Row h2 = sh.createRow(0);
+        int c = 0;
+        h2.createCell(c++).setCellValue("Celular");               // celular
+        for (int i = 0; i < req.getVariables().size(); i++) {
+            h2.createCell(c++).setCellValue("VAR" + (i + 1));
+        }
+
+        // Filas de datos
+        int r = 1;
+        for (var rowValues : rows) {
+            Row row = sh.createRow(r++);
+            int j = 0;
+            // Celular primero (la clave viene como "celular" o "CELULAR")
+            Object cel = rowValues.getOrDefault("celular",
+                    rowValues.getOrDefault("CELULAR", ""));
+            row.createCell(j++).setCellValue(cel == null ? "" : String.valueOf(cel));
+
+            for (String v : req.getVariables()) {
+                Object val = rowValues.get(v);
+                if (val instanceof Number) row.createCell(j++).setCellValue(((Number) val).doubleValue());
+                else                       row.createCell(j++).setCellValue(val == null ? "" : String.valueOf(val));
+            }
+        }
+
+        File out = new File("Mensajes_SMS.xlsx");
+        try (var fos = new java.io.FileOutputStream(out)) { wb.write(fos); }
+        catch (java.io.IOException e) { throw new RuntimeException(e); }
+        finally { try { wb.close(); } catch (java.io.IOException ignored) {} }
+        return out;
+    }
+
+    private String headerFor(String var) {
+        switch (var.toLowerCase()) {
+            case "nombre": return "Nombre";
+            case "baja30": return "BAJA 30";
+            case "saldomora":
+            case "saldo_mora": return "SALDO MORA";
+            case "deudatotal":
+            case "deuda_total": return "DEUDA TOTAL";
+            default: return var.toUpperCase();
+        }
+    }
+
+
 }

@@ -4,6 +4,10 @@ import com.foh.contacto_total_web_service.sms.dto.GenerateMessagesRequest;
 import com.foh.contacto_total_web_service.plantillaSMS.dto.PlantillaSMSRequest;
 import com.foh.contacto_total_web_service.plantillaSMS.dto.PlantillaSMSToUpdateRequest;
 import com.foh.contacto_total_web_service.plantillaSMS.model.PlantillaSMS;
+import com.foh.contacto_total_web_service.sms_template.dto.DynamicPreviewRequest;
+import com.foh.contacto_total_web_service.sms_template.dto.DynamicPreviewResponse;
+import com.foh.contacto_total_web_service.sms_template.dto.DynamicPreviewRow;
+import com.foh.contacto_total_web_service.sms_template.dto.DynamicQueryRequest;
 
 import java.io.File;
 import java.util.List;
@@ -17,4 +21,10 @@ public interface PlantillaSMSService {
     public abstract File getFileByPlantillaWithData2(GenerateMessagesRequest generateMessagesRequest);
     public abstract PlantillaSMS updatePlantilla(PlantillaSMSToUpdateRequest plantillaSMSToUpdateRequest);
     public abstract void deletePlantilla(Integer id);
+
+    // NUEVO
+    public abstract File getFileByCustomSMS(boolean onlyLtde, String periodo);
+
+    File exportDynamic(DynamicQueryRequest req);
+    DynamicPreviewResponse previewDynamic(DynamicQueryRequest req);
 }
