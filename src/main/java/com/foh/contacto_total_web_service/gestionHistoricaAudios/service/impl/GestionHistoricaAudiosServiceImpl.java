@@ -2,6 +2,7 @@ package com.foh.contacto_total_web_service.gestionHistoricaAudios.service.impl;
 
 import com.foh.contacto_total_web_service.gestionHistoricaAudios.dto.GestionHistoricaAudiosResponse;
 import com.foh.contacto_total_web_service.ftp.dto.RecordingDateRequest;
+import com.foh.contacto_total_web_service.gestionHistoricaAudios.dto.GestionHistoricaAudiosTramoRequest;
 import com.foh.contacto_total_web_service.gestionHistoricaAudios.repository.GestionHistoricaAudiosRepository;
 import com.foh.contacto_total_web_service.gestionHistoricaAudios.service.GestionHistoricaAudiosService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +17,15 @@ public class GestionHistoricaAudiosServiceImpl implements GestionHistoricaAudios
 
     @Autowired
     GestionHistoricaAudiosRepository gestionHistoricaAudiosRepository;
+
+    @Override
+    public List<GestionHistoricaAudiosResponse> getGestionHistoricaAudiosByTramo(GestionHistoricaAudiosTramoRequest gestionHistoricaAudiosTramoRequest) {
+        String tramo = gestionHistoricaAudiosTramoRequest.getTramo();
+        if (tramo == null) {
+            throw new IllegalArgumentException("El tramo no puede ser nulo");
+        }
+        return gestionHistoricaAudiosRepository.getGestionHistoricaAudiosByTramo(tramo);
+    }
 
     @Override
     public List<GestionHistoricaAudiosResponse> getGestionHistoricaAudiosByDateRange(RecordingDateRequest recordingDateRequest) {

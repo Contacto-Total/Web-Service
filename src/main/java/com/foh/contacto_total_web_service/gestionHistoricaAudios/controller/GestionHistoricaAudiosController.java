@@ -4,6 +4,7 @@ import com.foh.contacto_total_web_service.gestionHistoricaAudios.dto.GestionHist
 import com.foh.contacto_total_web_service.gestionHistoricaAudios.dto.GestionHistoricaAudiosResponse;
 import com.foh.contacto_total_web_service.gestionHistoricaAudios.dto.GestionHistoricaAudiosTelefonoRequest;
 import com.foh.contacto_total_web_service.ftp.dto.RecordingDateRequest;
+import com.foh.contacto_total_web_service.gestionHistoricaAudios.dto.GestionHistoricaAudiosTramoRequest;
 import com.foh.contacto_total_web_service.gestionHistoricaAudios.service.GestionHistoricaAudiosService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -19,6 +20,12 @@ public class GestionHistoricaAudiosController {
 
     @Autowired
     GestionHistoricaAudiosService gestionHistoricaAudiosService;
+
+    @PostMapping("/tramo")
+    public ResponseEntity<List<GestionHistoricaAudiosResponse>> getGestionHistoricaByTramo(@RequestBody GestionHistoricaAudiosTramoRequest recordingTramoRequest) {
+        List<GestionHistoricaAudiosResponse> gestionHistoricaAudiosResponse = gestionHistoricaAudiosService.getGestionHistoricaAudiosByTramo(recordingTramoRequest);
+        return new ResponseEntity<>(gestionHistoricaAudiosResponse, HttpStatus.OK);
+    }
 
     @PostMapping("/date/range")
     public ResponseEntity<List<GestionHistoricaAudiosResponse>> getGestionHistoricaByDateRange(@RequestBody RecordingDateRequest recordingDateRequest) {

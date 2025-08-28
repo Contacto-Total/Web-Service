@@ -30,6 +30,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(List.of(
+                "http://localhost:8080",
                 "http://localhost:4200",
                 "https://perfect-charmed-colt.ngrok-free.app"
         ));
