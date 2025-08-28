@@ -399,16 +399,65 @@ public class SMSRepository {
     }
 
     public List<Map<String,Object>> runDynamicQuery(DynamicQueryRequest req, Integer limit) {
-        // 1) map de variables -> expresiones SQL
-        Map<String,String> col = Map.of(
-                "nombre",     "CONCAT(UPPER(LEFT(LOWER(NOMBRE),1)), SUBSTRING(LOWER(NOMBRE),2))",
-                "baja30",     "CEIL(`2`)",
-                "saldomora",  "CEIL(SLDMORA)",
-                "deudatotal", "CEIL(SLDACTUALCONS)"
+        // 1) map de variables
+        Map<String,String> col = new HashMap<>();
+        col.put("nombre",     "CONCAT(UPPER(LEFT(LOWER(NOMBRE),1)), SUBSTRING(LOWER(NOMBRE),2))");
+        col.put("baja30",     "CEIL(`2`)");
+        col.put("saldomora",  "CEIL(SLDMORA)");
+        col.put("deudatotal", "CEIL(SLDACTUALCONS)");
 
-        );
+        // ===== NUEVO: LTD (Tramo 5) =====
+        boolean add200   = Boolean.TRUE.equals(req.getAdd200());
+        boolean onlyLtde = Boolean.TRUE.equals(req.getOnlyLtde());
 
-        // 2) SELECT: siempre CELULAR primero y luego variables con alias legible
+        String ltdExpr;
+        if (onlyLtde) {
+            // Solo LTDE (LTDESPECIAL)
+            // Si add200: sumar 200 solo si se mantiene < deuda total
+            if (add200) {
+                ltdExpr =
+                        "CASE " +
+                                "  WHEN LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 THEN " +
+                                "    CASE WHEN (CEIL(LTDESPECIAL) + 200) < CEIL(SLDACTUALCONS) " +
+                                "         THEN CEIL(LTDESPECIAL) + 200 " +
+                                "         ELSE CEIL(LTDESPECIAL) " +
+                                "    END " +
+                                "  ELSE NULL " +
+                                "END";
+            } else {
+                ltdExpr =
+                        "CASE " +
+                                "  WHEN LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 THEN CEIL(LTDESPECIAL) " +
+                                "  ELSE NULL " +
+                                "END";
+            }
+        } else {
+            // LTDE preferente; si no hay, usa LTD (`5`)
+            if (add200) {
+                ltdExpr =
+                        "CASE " +
+                                "  WHEN LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 THEN " +
+                                "    CASE WHEN (CEIL(LTDESPECIAL) + 200) < CEIL(SLDACTUALCONS) " +
+                                "         THEN CEIL(LTDESPECIAL) + 200 " +
+                                "         ELSE CEIL(LTDESPECIAL) " +
+                                "    END " +
+                                "  ELSE " +
+                                "    CASE WHEN (CEIL(`5`) + 200) < CEIL(SLDACTUALCONS) " +
+                                "         THEN CEIL(`5`) + 200 " +
+                                "         ELSE CEIL(`5`) " +
+                                "    END " +
+                                "END";
+            } else {
+                ltdExpr =
+                        "CASE " +
+                                "  WHEN LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 THEN CEIL(LTDESPECIAL) " +
+                                "  ELSE CEIL(`5`) " +
+                                "END";
+            }
+        }
+        col.put("ltd", ltdExpr);
+
+        // 2) SELECT: siempre CELULAR primero y luego variables
         StringBuilder sql = new StringBuilder(
                 "SELECT CAST(TELEFONOCELULAR AS CHAR) AS CELULAR"
         );
