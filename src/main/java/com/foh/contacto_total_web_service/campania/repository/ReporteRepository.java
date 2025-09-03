@@ -1,18 +1,15 @@
 package com.foh.contacto_total_web_service.campania.repository;
-
 import com.foh.contacto_total_web_service.campania.dto.GetFiltersToGenerateFileRequest;
 import com.foh.contacto_total_web_service.campania.util.RangoConditionBuilder;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
 import org.springframework.stereotype.Repository;
-
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Repository
 public class ReporteRepository {
-
     // Constantes para tipos de rango
     private static final String TIPO_CONTACTO_DIRECTO = "CONTACTO DIRECTO";
     private static final String TIPO_CONTACTO_INDIRECTO = "CONTACTO INDIRECTO";
@@ -45,19 +42,19 @@ public class ReporteRepository {
         StringBuilder constructorConsulta = new StringBuilder();
         constructorConsulta.append("SELECT RANGO, COUNT(1) FROM (");
 
+        String condicionFechas = construirCondicionFechas(request.getDueDates());
         boolean hayConsultaPrevia = false;
 
         // Agregar cada tipo de contacto si está presente
-        hayConsultaPrevia = agregarConsultaContactoDirecto(request, constructorConsulta, hayConsultaPrevia);
-        hayConsultaPrevia = agregarConsultaContactoIndirecto(request, constructorConsulta, hayConsultaPrevia);
-        hayConsultaPrevia = agregarConsultaPromesasRotas(request, constructorConsulta, documentosPromesasCaidas, hayConsultaPrevia);
-        hayConsultaPrevia = agregarConsultaNoContactados(request, constructorConsulta, hayConsultaPrevia);
+        hayConsultaPrevia = agregarConsultaContactoDirecto(request, constructorConsulta, hayConsultaPrevia, condicionFechas);
+        hayConsultaPrevia = agregarConsultaContactoIndirecto(request, constructorConsulta, hayConsultaPrevia, condicionFechas);
+        hayConsultaPrevia = agregarConsultaPromesasRotas(request, constructorConsulta, documentosPromesasCaidas, hayConsultaPrevia, condicionFechas);
+        hayConsultaPrevia = agregarConsultaNoContactados(request, constructorConsulta, hayConsultaPrevia, condicionFechas);
 
         // Finalizar la consulta con GROUP BY y ORDER BY
         finalizarConsulta(constructorConsulta);
 
         System.out.println("Consulta Final Reporte: " + constructorConsulta.toString());
-
         Query query = entityManager.createNativeQuery(constructorConsulta.toString());
         return query.getResultList();
     }
@@ -68,7 +65,8 @@ public class ReporteRepository {
     private boolean agregarConsultaContactoDirecto(
             GetFiltersToGenerateFileRequest request,
             StringBuilder constructorConsulta,
-            boolean hayConsultaPrevia
+            boolean hayConsultaPrevia,
+            String condicionFechas
     ) {
         if (!tieneElementos(request.getDirectContactRanges())) {
             return hayConsultaPrevia;
@@ -90,7 +88,8 @@ public class ReporteRepository {
                 SALDO_ACTUAL_CONSUMO,
                 "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')",
                 "",
-                request.getCampaignName()
+                request.getCampaignName(),
+                condicionFechas
         );
 
         constructorConsulta.append(subconsulta);
@@ -103,7 +102,8 @@ public class ReporteRepository {
     private boolean agregarConsultaContactoIndirecto(
             GetFiltersToGenerateFileRequest request,
             StringBuilder constructorConsulta,
-            boolean hayConsultaPrevia
+            boolean hayConsultaPrevia,
+            String condicionFechas
     ) {
         if (!tieneElementos(request.getIndirectContactRanges())) {
             return hayConsultaPrevia;
@@ -125,7 +125,8 @@ public class ReporteRepository {
                 SALDO_ACTUAL_CONSUMO,
                 "TIPI IN ('CONTACTO CON TERCEROS')",
                 "",
-                request.getCampaignName()
+                request.getCampaignName(),
+                condicionFechas
         );
 
         constructorConsulta.append(subconsulta);
@@ -139,7 +140,8 @@ public class ReporteRepository {
             GetFiltersToGenerateFileRequest request,
             StringBuilder constructorConsulta,
             List<String> documentosPromesasCaidas,
-            boolean hayConsultaPrevia
+            boolean hayConsultaPrevia,
+            String condicionFechas
     ) {
         if (!tieneElementos(request.getBrokenPromisesRanges())) {
             return hayConsultaPrevia;
@@ -164,7 +166,8 @@ public class ReporteRepository {
                 SALDO_CAPITAL_ASIGNADO,
                 condicionesTipoContacto,
                 condicionDocumentos,
-                request.getCampaignName()
+                request.getCampaignName(),
+                condicionFechas
         );
 
         constructorConsulta.append(subconsulta);
@@ -177,7 +180,8 @@ public class ReporteRepository {
     private boolean agregarConsultaNoContactados(
             GetFiltersToGenerateFileRequest request,
             StringBuilder constructorConsulta,
-            boolean hayConsultaPrevia
+            boolean hayConsultaPrevia,
+            String condicionFechas
     ) {
         if (!tieneElementos(request.getNotContactedRanges())) {
             return hayConsultaPrevia;
@@ -200,7 +204,8 @@ public class ReporteRepository {
         String subconsulta = construirSubconsultaNoContactados(
                 condicionesRango,
                 condicionesNoContactado,
-                request.getCampaignName()
+                request.getCampaignName(),
+                condicionFechas
         );
 
         constructorConsulta.append(subconsulta);
@@ -216,7 +221,8 @@ public class ReporteRepository {
             String columnaMontos,
             String condicionesTipo,
             String condicionesAdicionales,
-            String rangoMoraProyectado
+            String rangoMoraProyectado,
+            String condicionFechas
     ) {
         StringBuilder subconsulta = new StringBuilder();
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
@@ -233,6 +239,11 @@ public class ReporteRepository {
         // Agregar condición de rango mora si existe
         if (!condicionRangoMora.isEmpty()) {
             subconsulta.append(" AND ").append(condicionRangoMora);
+        }
+
+        // Agregar condición de fechas si existe
+        if (!condicionFechas.isEmpty()) {
+            subconsulta.append(condicionFechas);
         }
 
         subconsulta.append(" ORDER BY SLDCAPCONS DESC) b ")
@@ -253,7 +264,8 @@ public class ReporteRepository {
     private String construirSubconsultaNoContactados(
             String condicionesRango,
             String condicionesNoContactado,
-            String rangoMoraProyectado
+            String rangoMoraProyectado,
+            String condicionFechas
     ) {
         StringBuilder subconsulta = new StringBuilder();
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
@@ -269,6 +281,11 @@ public class ReporteRepository {
         // Agregar condición de rango mora si existe
         if (!condicionRangoMora.isEmpty()) {
             subconsulta.append(" AND ").append(condicionRangoMora);
+        }
+
+        // Agregar condición de fechas si existe
+        if (!condicionFechas.isEmpty()) {
+            subconsulta.append(condicionFechas);
         }
 
         subconsulta.append(" ORDER BY SLDCAPCONS DESC) b ")
@@ -295,7 +312,6 @@ public class ReporteRepository {
         if (!tieneElementos(documentosPromesasCaidas)) {
             return "AND documento IN ('')";
         }
-
         String listaDocumentos = construirListaDocumentosPromesas(documentosPromesasCaidas);
         return "AND documento IN (" + listaDocumentos + ")";
     }
@@ -319,21 +335,37 @@ public class ReporteRepository {
         if (!tieneElementos(documentosPromesasCaidas)) {
             return "";
         }
-
         return documentosPromesasCaidas.stream()
                 .map(documento -> "'" + documento + "'")
                 .collect(Collectors.joining(", "));
     }
 
     /**
-     * Construye la condición para el rango de mora proyectado si está definido
+     * Construye la condición WHERE para el rango de mora proyectado si está definido
      */
     private String construirCondicionRangoMora(String rangoMoraProyectado) {
         if (rangoMoraProyectado == null || rangoMoraProyectado.trim().isEmpty()) {
             return "";
         }
-
         return "RANGOMORAPROYAG = '" + rangoMoraProyectado.trim() + "'";
+    }
+
+    /**
+     * Construye la condición para las fechas de vencimiento
+     * @param dueDates Lista de fechas de vencimiento
+     * @return Condición SQL para filtrar por fechas de vencimiento
+     */
+    private String construirCondicionFechas(List<String> dueDates) {
+        if (!tieneElementos(dueDates)) {
+            return "";
+        }
+
+        // Construir la condición FECVENCIMIENTO IN (lista_de_fechas)
+        String fechasFormateadas = dueDates.stream()
+                .map(fecha -> "'" + fecha.trim() + "'")
+                .collect(Collectors.joining(", "));
+
+        return " AND FECVENCIMIENTO IN (" + fechasFormateadas + ")";
     }
 
     /**
@@ -341,5 +373,11 @@ public class ReporteRepository {
      */
     private boolean tieneElementos(List<?> lista) {
         return lista != null && !lista.isEmpty();
+    }
+
+    public List<String> getFechasDeVencimientoDisponibles() {
+        String sql = "SELECT DISTINCT FECHAVENCIMIENTO FROM TEMP_MERGE ORDER BY FECHAVENCIMIENTO";
+        Query query = entityManager.createNativeQuery(sql);
+        return query.getResultList();
     }
 }
