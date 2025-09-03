@@ -20,6 +20,7 @@ public class OpenApiConfig {
                         .version("v1.0.0")
                         .license(new License().name("Apache 2.0").url("https://springdoc.org")))
                         .servers(List.of(
+                                new Server().url("https://martin-set-gelding.ngrok-free.app").description("Hola"),
                                 new Server().url("https://perfect-charmed-colt.ngrok-free.app").description("Ngrok HTTPS"),
                                 new Server().url("http://localhost:8080").description("Local Dev")
                         ));

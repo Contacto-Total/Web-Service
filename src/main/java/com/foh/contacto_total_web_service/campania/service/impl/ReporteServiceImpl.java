@@ -1,9 +1,9 @@
-package com.foh.contacto_total_web_service.reporte.service.impl;
+package com.foh.contacto_total_web_service.campania.service.impl;
 
-import com.foh.contacto_total_web_service.rango.dto.GetRangosByRangesAndGenerateFileRequest;
 import com.foh.contacto_total_web_service.compromiso.repository.CompromisoRepository;
-import com.foh.contacto_total_web_service.reporte.repository.ReporteRepository;
-import com.foh.contacto_total_web_service.reporte.service.ReporteService;
+import com.foh.contacto_total_web_service.campania.dto.GetFiltersToGenerateFileRequest;
+import com.foh.contacto_total_web_service.campania.repository.ReporteRepository;
+import com.foh.contacto_total_web_service.campania.service.ReporteService;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -27,9 +27,9 @@ public class ReporteServiceImpl implements ReporteService {
     private CompromisoRepository compromisoRepository;
 
     @Override
-    public File getReporteByRangesAndGenerateFile(GetRangosByRangesAndGenerateFileRequest getRangosByRangesAndGenerateFileRequest) {
+    public File getReporteByRangesAndGenerateFile(GetFiltersToGenerateFileRequest getFiltersToGenerateFileRequest) {
         List<String> promesasCaidas = compromisoRepository.findPromesasCaidasWithoutColchon();
-        List<Object[]> resultados = reporteRepository.getReporteByRangos(getRangosByRangesAndGenerateFileRequest, promesasCaidas);
+        List<Object[]> resultados = reporteRepository.getReporteByRangos(getFiltersToGenerateFileRequest, promesasCaidas);
 
         Integer rowCount = 0;
 

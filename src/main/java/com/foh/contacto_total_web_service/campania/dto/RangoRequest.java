@@ -1,4 +1,4 @@
-package com.foh.contacto_total_web_service.rango.dto;
+package com.foh.contacto_total_web_service.campania.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

@@ -1,10 +1,7 @@
 package com.foh.contacto_total_web_service.gestionHistoricaAudios.controller;
 
-import com.foh.contacto_total_web_service.gestionHistoricaAudios.dto.GestionHistoricaAudiosDocumentoRequest;
-import com.foh.contacto_total_web_service.gestionHistoricaAudios.dto.GestionHistoricaAudiosResponse;
-import com.foh.contacto_total_web_service.gestionHistoricaAudios.dto.GestionHistoricaAudiosTelefonoRequest;
+import com.foh.contacto_total_web_service.gestionHistoricaAudios.dto.*;
 import com.foh.contacto_total_web_service.ftp.dto.RecordingDateRequest;
-import com.foh.contacto_total_web_service.gestionHistoricaAudios.dto.GestionHistoricaAudiosTramoRequest;
 import com.foh.contacto_total_web_service.gestionHistoricaAudios.service.GestionHistoricaAudiosService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -28,7 +25,7 @@ public class GestionHistoricaAudiosController {
     }
 
     @PostMapping("/date/range")
-    public ResponseEntity<List<GestionHistoricaAudiosResponse>> getGestionHistoricaByDateRange(@RequestBody RecordingDateRequest recordingDateRequest) {
+    public ResponseEntity<List<GestionHistoricaAudiosResponse>> getGestionHistoricaByDateRange(@RequestBody GestionHistoricaAudiosDateRangeRequest recordingDateRequest) {
         List<GestionHistoricaAudiosResponse> gestionHistoricaAudiosResponse = gestionHistoricaAudiosService.getGestionHistoricaAudiosByDateRange(recordingDateRequest);
 
         return new ResponseEntity<>(gestionHistoricaAudiosResponse, HttpStatus.OK);
@@ -36,14 +33,14 @@ public class GestionHistoricaAudiosController {
 
     @PostMapping("/documento")
     public ResponseEntity<List<GestionHistoricaAudiosResponse>> getGestionHistoricaByDocumento(@RequestBody GestionHistoricaAudiosDocumentoRequest gestionHistoricaAudiosDocumentoRequest) {
-        List<GestionHistoricaAudiosResponse> gestionHistoricaAudiosResponse = gestionHistoricaAudiosService.getGestionHistoricaAudiosByDocumento(gestionHistoricaAudiosDocumentoRequest.getDocumento());
+        List<GestionHistoricaAudiosResponse> gestionHistoricaAudiosResponse = gestionHistoricaAudiosService.getGestionHistoricaAudiosByDocumento(gestionHistoricaAudiosDocumentoRequest);
 
         return new ResponseEntity<>(gestionHistoricaAudiosResponse, HttpStatus.OK);
     }
 
     @PostMapping("/telefono")
     public ResponseEntity<List<GestionHistoricaAudiosResponse>> getGestionHistoricaByTelefono(@RequestBody GestionHistoricaAudiosTelefonoRequest gestionHistoricaAudiosTelefonoRequest) {
-        List<GestionHistoricaAudiosResponse> gestionHistoricaAudiosResponse = gestionHistoricaAudiosService.getGestionHistoricaAudiosByTelefono(gestionHistoricaAudiosTelefonoRequest.getTelefono());
+        List<GestionHistoricaAudiosResponse> gestionHistoricaAudiosResponse = gestionHistoricaAudiosService.getGestionHistoricaAudiosByTelefono(gestionHistoricaAudiosTelefonoRequest);
 
         return new ResponseEntity<>(gestionHistoricaAudiosResponse, HttpStatus.OK);
     }
