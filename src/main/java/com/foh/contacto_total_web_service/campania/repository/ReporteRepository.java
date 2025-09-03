@@ -376,7 +376,7 @@ public class ReporteRepository {
     }
 
     public List<String> getFechasDeVencimientoDisponibles() {
-        String sql = "SELECT DISTINCT FECHAVENCIMIENTO FROM TEMP_MERGE ORDER BY FECHAVENCIMIENTO";
+        String sql = "SELECT DISTINCT FECVENCIMIENTO FROM TEMP_MERGE WHERE RANGOMORAPROYAG='Tramo 3' ORDER BY FECVENCIMIENTO";
         Query query = entityManager.createNativeQuery(sql);
         return query.getResultList();
     }
