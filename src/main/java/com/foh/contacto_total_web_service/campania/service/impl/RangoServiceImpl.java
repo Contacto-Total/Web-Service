@@ -1,9 +1,9 @@
-package com.foh.contacto_total_web_service.rango.service.impl;
+package com.foh.contacto_total_web_service.campania.service.impl;
 
-import com.foh.contacto_total_web_service.rango.dto.GetRangosByRangesAndGenerateFileRequest;
+import com.foh.contacto_total_web_service.campania.service.RangoService;
 import com.foh.contacto_total_web_service.compromiso.repository.CompromisoRepository;
-import com.foh.contacto_total_web_service.rango.repository.RangoRepository;
-import com.foh.contacto_total_web_service.rango.service.RangoService;
+import com.foh.contacto_total_web_service.campania.dto.GetFiltersToGenerateFileRequest;
+import com.foh.contacto_total_web_service.campania.repository.RangoRepository;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -27,9 +27,9 @@ public class RangoServiceImpl implements RangoService {
     private CompromisoRepository compromisoRepository;
 
     @Override
-    public File getRangosByRangesAndGenerateFile(GetRangosByRangesAndGenerateFileRequest getRangosByRangesAndGenerateFileRequest) {
+    public File getRangosByRangesAndGenerateFile(GetFiltersToGenerateFileRequest getFiltersToGenerateFileRequest) {
         List<String> promesasCaidas = compromisoRepository.findPromesasCaidasWithoutColchon();
-        List<Object[]> resultados = rangoRepository.findByRangosAndTipoContacto(getRangosByRangesAndGenerateFileRequest, promesasCaidas);
+        List<Object[]> resultados = rangoRepository.findByRangosAndTipoContacto(getFiltersToGenerateFileRequest, promesasCaidas);
 
         String templatePath = "src/files/modelo_campana_asterisk.xlsm";
         String outputPath = "rangos_resultados.xlsm";

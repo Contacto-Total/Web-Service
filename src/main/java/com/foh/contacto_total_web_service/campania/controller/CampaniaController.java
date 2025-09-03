@@ -1,8 +1,9 @@
-package com.foh.contacto_total_web_service.rango.controller;
+package com.foh.contacto_total_web_service.campania.controller;
 
-import com.foh.contacto_total_web_service.rango.dto.GetRangosByRangesAndGenerateFileRequest;
-import com.foh.contacto_total_web_service.rango.service.RangoService;
-import com.foh.contacto_total_web_service.reporte.service.ReporteService;
+import com.foh.contacto_total_web_service.campania.service.RangoService;
+import com.foh.contacto_total_web_service.campania.service.ReporteService;
+import com.foh.contacto_total_web_service.campania.dto.GetFiltersToGenerateFileRequest;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -21,8 +22,9 @@ import java.util.zip.ZipOutputStream;
 
 @CrossOrigin(origins = "**" , maxAge = 3600)
 @RestController
-@RequestMapping("/api/rangos")
-public class RangoController {
+@RequestMapping("/api/campania")
+@Tag(name = "Campaña", description = "Endpoint de generación de reportes de campaña")
+public class CampaniaController {
 
     @Autowired
     private RangoService rangoService;
@@ -30,8 +32,8 @@ public class RangoController {
     @Autowired
     private ReporteService reporteService;
 
-    @PostMapping("/consulta")
-    public ResponseEntity<Resource> getRangosByRangesAndGenerateFile(@RequestBody GetRangosByRangesAndGenerateFileRequest getRangosByRangesAndGenerateFileRequest) {
+    @PostMapping("/generar-zip-reportes")
+    public ResponseEntity<Resource> getRangosByRangesAndGenerateFile(@RequestBody GetFiltersToGenerateFileRequest getRangosByRangesAndGenerateFileRequest) {
         File file1 = rangoService.getRangosByRangesAndGenerateFile(getRangosByRangesAndGenerateFileRequest);
         File file2 = reporteService.getReporteByRangesAndGenerateFile(getRangosByRangesAndGenerateFileRequest);
 

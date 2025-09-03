@@ -4,10 +4,12 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class GestionHistoricaAudiosDocumentoRequest {
-    String tramo;
-    String documento;
+public class GestionHistoricaAudiosDateRangeRequest {
+    private String tramo;
+    private LocalDate startDate;
+    private LocalDate endDate;
 }
