@@ -223,4 +223,8 @@ public class ReporteServiceImpl implements ReporteService {
             return null;
         }
     }
+
+    public List<String> getFechasDeVencimiento() {
+        return reporteRepository.getFechasDeVencimientoDisponibles();
+    }
 }

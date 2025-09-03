@@ -22,7 +22,8 @@ public class OpenApiConfig {
                         .servers(List.of(
                                 new Server().url("https://martin-set-gelding.ngrok-free.app").description("Hola"),
                                 new Server().url("https://perfect-charmed-colt.ngrok-free.app").description("Ngrok HTTPS"),
-                                new Server().url("http://localhost:8080").description("Local Dev")
+                                new Server().url("http://localhost:8080").description("Local Dev"),
+                                new Server().url("https://huge-only-marmoset.ngrok-free.app").description("Render HTTPS")
                         ));
     }
 

@@ -11,6 +11,7 @@ import java.util.List;
 @AllArgsConstructor
 public class GetFiltersToGenerateFileRequest {
     String campaignName;
+    List<String> dueDates;
     List<RangoRequest> directContactRanges;
     List<RangoRequest> indirectContactRanges;
     List<RangoRequest> brokenPromisesRanges;

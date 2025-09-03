@@ -1,5 +1,4 @@
 package com.foh.contacto_total_web_service.campania.repository;
-
 import com.foh.contacto_total_web_service.campania.dto.GetFiltersToGenerateFileRequest;
 import com.foh.contacto_total_web_service.campania.dto.RangoRequest;
 import com.foh.contacto_total_web_service.campania.util.RangoConditionBuilder;
@@ -7,14 +6,12 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
 import org.springframework.stereotype.Repository;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Repository
 public class RangoRepository {
-
     // Constantes para tipos de contacto
     private static final String CONTACTO_DIRECTO = "RANGO CONTACTO DIRECTO";
     private static final String CONTACTO_INDIRECTO = "RANGO CONTACTO INDIRECTO";
@@ -39,11 +36,8 @@ public class RangoRepository {
             List<String> documentosPromesasCaidas
     ) {
         List<String> subconsultas = construirSubconsultas(request, documentosPromesasCaidas);
-
         String consultaFinal = construirConsultaPrincipal(subconsultas);
-
         System.out.println("Consulta Final: " + consultaFinal);
-
         Query query = entityManager.createNativeQuery(consultaFinal);
         return query.getResultList();
     }
@@ -57,6 +51,7 @@ public class RangoRepository {
     ) {
         List<String> subconsultas = new ArrayList<>();
         String rangoMoraProyectado = request.getCampaignName();
+        String condicionFechas = construirCondicionFechas(request.getDueDates());
 
         // Subconsulta para contacto directo
         if (tieneElementos(request.getDirectContactRanges())) {
@@ -66,7 +61,8 @@ public class RangoRepository {
                     CONTACTO_DIRECTO,
                     SALDO_ACTUAL_CONSUMO,
                     "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')",
-                    rangoMoraProyectado
+                    rangoMoraProyectado,
+                    condicionFechas
             );
             subconsultas.add(subconsulta);
         }
@@ -79,7 +75,8 @@ public class RangoRepository {
                     CONTACTO_INDIRECTO,
                     SALDO_ACTUAL_CONSUMO,
                     "TIPI IN ('CONTACTO CON TERCEROS')",
-                    rangoMoraProyectado
+                    rangoMoraProyectado,
+                    condicionFechas
             );
             subconsultas.add(subconsulta);
         }
@@ -88,14 +85,14 @@ public class RangoRepository {
         if (tieneElementos(request.getBrokenPromisesRanges())) {
             String condicionPromesas = construirCondicionPromesasRotas(documentosPromesasCaidas);
             String condicionesExtra = construirCondicionesPromesasRotas(condicionPromesas);
-
             String subconsulta = construirSubconsulta(
                     3, // bloque
                     request.getBrokenPromisesRanges(),
                     PROMESA_ROTA,
                     SALDO_CAPITAL_ASIGNADO,
                     condicionesExtra,
-                    rangoMoraProyectado
+                    rangoMoraProyectado,
+                    condicionFechas
             );
             subconsultas.add(subconsulta);
         }
@@ -105,14 +102,14 @@ public class RangoRepository {
             String condicionesNoContactado =
                     "TIPI IN ('MSJ VOZ - SMS - WSP - BAJO PUERTA', 'NO CONTESTA', 'APAGADO', " +
                             "'EQUIVOCADO', 'FUERA DE SERVICIO - NO EXISTE') OR TIPI IS NULL";
-
             String subconsulta = construirSubconsulta(
                     4, // bloque
                     request.getNotContactedRanges(),
                     NO_CONTACTADO,
                     SALDO_CAPITAL_ASIGNADO,
                     condicionesNoContactado,
-                    rangoMoraProyectado
+                    rangoMoraProyectado,
+                    condicionFechas
             );
             subconsultas.add(subconsulta);
         }
@@ -129,11 +126,11 @@ public class RangoRepository {
             String tipoRango,
             String columnaMontos,
             String condicionesAdicionales,
-            String rangoMoraProyectado
+            String rangoMoraProyectado,
+            String condicionFechas
     ) {
         String condicionesRango = RangoConditionBuilder.buildRangoConditions(
                 rangos, tipoRango, columnaMontos);
-
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
         return """
@@ -147,8 +144,9 @@ public class RangoRepository {
               ) b
              WHERE b.rango IS NOT NULL
                AND CAST(%s AS DECIMAL(10, 2)) > 0
-               AND %s
-            """.formatted(numeroBloque, condicionesRango, condicionRangoMora, columnaMontos, condicionesAdicionales);
+               AND %s%s
+            """.formatted(numeroBloque, condicionesRango, condicionRangoMora,
+                columnaMontos, condicionesAdicionales, condicionFechas);
     }
 
     /**
@@ -156,7 +154,6 @@ public class RangoRepository {
      */
     private String construirConsultaPrincipal(List<String> subconsultas) {
         String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
-
         return """
             SELECT DOCUMENTO,
                    COALESCE(TELEFONOCELULAR, telefonodomicilio, telefonolaboral, telfreferencia1, telfreferencia2),
@@ -186,14 +183,12 @@ public class RangoRepository {
         String tiposPromesa = "TIPI IN ('PROMESA DE PAGO', 'OPORTUNIDAD DE PAGO', " +
                 "'RECORDATORIO DE PAGO', 'CONFIRMACION DE ABONO', 'CANCELACION PARCIAL', " +
                 "'CANCELACION TOTAL', 'CANCELACION NO REPORTADAS O APLICADAS')";
-
         String condicionFinal = tiposPromesa;
         if (condicionDocumentos.isEmpty()) {
             condicionFinal += " AND documento IN ('')";
         } else {
             condicionFinal += " AND documento IN (" + condicionDocumentos + ")";
         }
-
         return condicionFinal;
     }
 
@@ -204,7 +199,6 @@ public class RangoRepository {
         if (!tieneElementos(documentosPromesasCaidas)) {
             return "";
         }
-
         return documentosPromesasCaidas.stream()
                 .map(documento -> "'" + documento + "'")
                 .collect(Collectors.joining(", "));
@@ -217,8 +211,25 @@ public class RangoRepository {
         if (rangoMoraProyectado == null || rangoMoraProyectado.trim().isEmpty()) {
             return "";
         }
-
         return "WHERE RANGOMORAPROYAG = '" + rangoMoraProyectado.trim() + "'";
+    }
+
+    /**
+     * Construye la condición para las fechas de vencimiento
+     * @param dueDates Lista de fechas de vencimiento
+     * @return Condición SQL para filtrar por fechas de vencimiento
+     */
+    private String construirCondicionFechas(List<String> dueDates) {
+        if (!tieneElementos(dueDates)) {
+            return "";
+        }
+
+        // Construir la condición FECVENCIMIENTO IN (lista_de_fechas)
+        String fechasFormateadas = dueDates.stream()
+                .map(fecha -> "'" + fecha.trim() + "'")
+                .collect(Collectors.joining(", "));
+
+        return " AND FECVENCIMIENTO IN (" + fechasFormateadas + ")";
     }
 
     /**
