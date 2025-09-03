@@ -8,6 +8,7 @@ import jakarta.persistence.Query;
 import org.springframework.stereotype.Repository;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Repository
@@ -52,6 +53,7 @@ public class RangoRepository {
         List<String> subconsultas = new ArrayList<>();
         String rangoMoraProyectado = request.getCampaignName();
         String condicionFechas = construirCondicionFechas(request.getDueDates());
+        String condicionContenido = construirCondicionContenido(request.getCampaignName(), request.getContent());
 
         // Subconsulta para contacto directo
         if (tieneElementos(request.getDirectContactRanges())) {
@@ -62,7 +64,8 @@ public class RangoRepository {
                     SALDO_ACTUAL_CONSUMO,
                     "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')",
                     rangoMoraProyectado,
-                    condicionFechas
+                    condicionFechas,
+                    condicionContenido
             );
             subconsultas.add(subconsulta);
         }
@@ -76,7 +79,8 @@ public class RangoRepository {
                     SALDO_ACTUAL_CONSUMO,
                     "TIPI IN ('CONTACTO CON TERCEROS')",
                     rangoMoraProyectado,
-                    condicionFechas
+                    condicionFechas,
+                    condicionContenido
             );
             subconsultas.add(subconsulta);
         }
@@ -92,7 +96,8 @@ public class RangoRepository {
                     SALDO_CAPITAL_ASIGNADO,
                     condicionesExtra,
                     rangoMoraProyectado,
-                    condicionFechas
+                    condicionFechas,
+                    condicionContenido
             );
             subconsultas.add(subconsulta);
         }
@@ -109,13 +114,15 @@ public class RangoRepository {
                     SALDO_CAPITAL_ASIGNADO,
                     condicionesNoContactado,
                     rangoMoraProyectado,
-                    condicionFechas
+                    condicionFechas,
+                    condicionContenido
             );
             subconsultas.add(subconsulta);
         }
 
         return subconsultas;
     }
+
 
     /**
      * Construye una subconsulta individual para un tipo específico de contacto
@@ -127,7 +134,8 @@ public class RangoRepository {
             String columnaMontos,
             String condicionesAdicionales,
             String rangoMoraProyectado,
-            String condicionFechas
+            String condicionFechas,
+            String condicionContenido
     ) {
         String condicionesRango = RangoConditionBuilder.buildRangoConditions(
                 rangos, tipoRango, columnaMontos);
@@ -230,6 +238,18 @@ public class RangoRepository {
                 .collect(Collectors.joining(", "));
 
         return " AND FECVENCIMIENTO IN (" + fechasFormateadas + ")";
+    }
+
+    private String construirCondicionContenido(String campaignName, Boolean content) {
+        if(Objects.equals(campaignName, "Tramo 3") && !content) {
+            return "AND (DOCUMENTO in (SELECT CASE WHEN A.IDENTITY_CODE LIKE 'D%' THEN RIGHT(A.IDENTITY_CODE,8) WHEN A.IDENTITY_CODE LIKE 'C%' THEN TRIM(LEADING '0' FROM REPLACE(A.IDENTITY_CODE,'C','0')) ELSE A.IDENTITY_CODE END AS DOCUMENTO FROM PAYS_TEMP A WHERE RANGO_MORA_ASIG  IN ('4.[61-90]') AND CONTENCION = 'NO CONTENIDO') OR (SELECT COUNT(*) FROM PAYS_TEMP WHERE RANGO_MORA_ASIG  IN ('4.[61-90]') AND CONTENCION = 'NO CONTENIDO') = 0)";
+        }
+
+        if(Objects.equals(campaignName, "Tramo 5") && !content) {
+            return "AND (DOCUMENTO in (SELECT CASE WHEN A.IDENTITY_CODE LIKE 'D%' THEN RIGHT(A.IDENTITY_CODE,8) WHEN A.IDENTITY_CODE LIKE 'C%' THEN TRIM(LEADING '0' FROM REPLACE(A.IDENTITY_CODE,'C','0')) ELSE A.IDENTITY_CODE END AS DOCUMENTO FROM PAYS_TEMP A WHERE RANGO_MORA_ASIG  IN ('[121-mas]') AND CONTENCION = 'NO CONTENIDO') OR (SELECT COUNT(*) FROM PAYS_TEMP WHERE RANGO_MORA_ASIG  IN ('[121-mas]') AND CONTENCION = 'NO CONTENIDO') = 0)";
+        }
+
+        return "";
     }
 
     /**
