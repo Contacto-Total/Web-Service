@@ -6,6 +6,7 @@ import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
 import org.springframework.stereotype.Repository;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Repository
@@ -43,13 +44,14 @@ public class ReporteRepository {
         constructorConsulta.append("SELECT RANGO, COUNT(1) FROM (");
 
         String condicionFechas = construirCondicionFechas(request.getDueDates());
+        String condicionContenido = construirCondicionContenido(request.getCampaignName(), request.getContent());
         boolean hayConsultaPrevia = false;
 
         // Agregar cada tipo de contacto si está presente
-        hayConsultaPrevia = agregarConsultaContactoDirecto(request, constructorConsulta, hayConsultaPrevia, condicionFechas);
-        hayConsultaPrevia = agregarConsultaContactoIndirecto(request, constructorConsulta, hayConsultaPrevia, condicionFechas);
-        hayConsultaPrevia = agregarConsultaPromesasRotas(request, constructorConsulta, documentosPromesasCaidas, hayConsultaPrevia, condicionFechas);
-        hayConsultaPrevia = agregarConsultaNoContactados(request, constructorConsulta, hayConsultaPrevia, condicionFechas);
+        hayConsultaPrevia = agregarConsultaContactoDirecto(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
+        hayConsultaPrevia = agregarConsultaContactoIndirecto(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
+        hayConsultaPrevia = agregarConsultaPromesasRotas(request, constructorConsulta, documentosPromesasCaidas, hayConsultaPrevia, condicionFechas, condicionContenido);
+        hayConsultaPrevia = agregarConsultaNoContactados(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
 
         // Finalizar la consulta con GROUP BY y ORDER BY
         finalizarConsulta(constructorConsulta);
@@ -66,7 +68,8 @@ public class ReporteRepository {
             GetFiltersToGenerateFileRequest request,
             StringBuilder constructorConsulta,
             boolean hayConsultaPrevia,
-            String condicionFechas
+            String condicionFechas,
+            String condicionContenido
     ) {
         if (!tieneElementos(request.getDirectContactRanges())) {
             return hayConsultaPrevia;
@@ -89,7 +92,8 @@ public class ReporteRepository {
                 "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')",
                 "",
                 request.getCampaignName(),
-                condicionFechas
+                condicionFechas,
+                condicionContenido
         );
 
         constructorConsulta.append(subconsulta);
@@ -103,7 +107,8 @@ public class ReporteRepository {
             GetFiltersToGenerateFileRequest request,
             StringBuilder constructorConsulta,
             boolean hayConsultaPrevia,
-            String condicionFechas
+            String condicionFechas,
+            String condicionContenido
     ) {
         if (!tieneElementos(request.getIndirectContactRanges())) {
             return hayConsultaPrevia;
@@ -126,7 +131,8 @@ public class ReporteRepository {
                 "TIPI IN ('CONTACTO CON TERCEROS')",
                 "",
                 request.getCampaignName(),
-                condicionFechas
+                condicionFechas,
+                condicionContenido
         );
 
         constructorConsulta.append(subconsulta);
@@ -141,7 +147,8 @@ public class ReporteRepository {
             StringBuilder constructorConsulta,
             List<String> documentosPromesasCaidas,
             boolean hayConsultaPrevia,
-            String condicionFechas
+            String condicionFechas,
+            String condicionContenido
     ) {
         if (!tieneElementos(request.getBrokenPromisesRanges())) {
             return hayConsultaPrevia;
@@ -167,7 +174,8 @@ public class ReporteRepository {
                 condicionesTipoContacto,
                 condicionDocumentos,
                 request.getCampaignName(),
-                condicionFechas
+                condicionFechas,
+                condicionContenido
         );
 
         constructorConsulta.append(subconsulta);
@@ -181,7 +189,8 @@ public class ReporteRepository {
             GetFiltersToGenerateFileRequest request,
             StringBuilder constructorConsulta,
             boolean hayConsultaPrevia,
-            String condicionFechas
+            String condicionFechas,
+            String condicionContenido
     ) {
         if (!tieneElementos(request.getNotContactedRanges())) {
             return hayConsultaPrevia;
@@ -205,7 +214,8 @@ public class ReporteRepository {
                 condicionesRango,
                 condicionesNoContactado,
                 request.getCampaignName(),
-                condicionFechas
+                condicionFechas,
+                condicionContenido
         );
 
         constructorConsulta.append(subconsulta);
@@ -222,7 +232,8 @@ public class ReporteRepository {
             String condicionesTipo,
             String condicionesAdicionales,
             String rangoMoraProyectado,
-            String condicionFechas
+            String condicionFechas,
+            String condicionContenido
     ) {
         StringBuilder subconsulta = new StringBuilder();
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
@@ -246,6 +257,10 @@ public class ReporteRepository {
             subconsulta.append(condicionFechas);
         }
 
+        if (!condicionContenido.isEmpty()) {
+            subconsulta.append(" ").append(condicionContenido);
+        }
+
         subconsulta.append(" ORDER BY SLDCAPCONS DESC) b ")
                 .append("WHERE CAST(").append(columnaMontos).append(" AS DECIMAL(10, 2)) > 0 ")
                 .append("AND ").append(condicionesTipo).append(" ")
@@ -265,7 +280,8 @@ public class ReporteRepository {
             String condicionesRango,
             String condicionesNoContactado,
             String rangoMoraProyectado,
-            String condicionFechas
+            String condicionFechas,
+            String condicionContenido
     ) {
         StringBuilder subconsulta = new StringBuilder();
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
@@ -366,6 +382,18 @@ public class ReporteRepository {
                 .collect(Collectors.joining(", "));
 
         return " AND FECVENCIMIENTO IN (" + fechasFormateadas + ")";
+    }
+
+    private String construirCondicionContenido(String campaignName, Boolean content) {
+        if(Objects.equals(campaignName, "Tramo 3") && !content) {
+            return "AND (DOCUMENTO in (SELECT CASE WHEN A.IDENTITY_CODE LIKE 'D%' THEN RIGHT(A.IDENTITY_CODE,8) WHEN A.IDENTITY_CODE LIKE 'C%' THEN TRIM(LEADING '0' FROM REPLACE(A.IDENTITY_CODE,'C','0')) ELSE A.IDENTITY_CODE END AS DOCUMENTO FROM PAYS_TEMP A WHERE RANGO_MORA_ASIG  IN ('4.[61-90]') AND CONTENCION = 'NO CONTENIDO') OR (SELECT COUNT(*) FROM PAYS_TEMP WHERE RANGO_MORA_ASIG  IN ('4.[61-90]') AND CONTENCION = 'NO CONTENIDO') = 0)";
+        }
+
+        if(Objects.equals(campaignName, "Tramo 5") && !content) {
+            return "AND (DOCUMENTO in (SELECT CASE WHEN A.IDENTITY_CODE LIKE 'D%' THEN RIGHT(A.IDENTITY_CODE,8) WHEN A.IDENTITY_CODE LIKE 'C%' THEN TRIM(LEADING '0' FROM REPLACE(A.IDENTITY_CODE,'C','0')) ELSE A.IDENTITY_CODE END AS DOCUMENTO FROM PAYS_TEMP A WHERE RANGO_MORA_ASIG  IN ('[121-mas]') AND CONTENCION = 'NO CONTENIDO') OR (SELECT COUNT(*) FROM PAYS_TEMP WHERE RANGO_MORA_ASIG  IN ('[121-mas]') AND CONTENCION = 'NO CONTENIDO') = 0)";
+        }
+
+        return "";
     }
 
     /**
