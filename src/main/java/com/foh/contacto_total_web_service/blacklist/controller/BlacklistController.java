@@ -7,14 +7,14 @@ import com.foh.contacto_total_web_service.blacklist.service.BlacklistService;
 import com.foh.contacto_total_web_service.tempMerge.service.TempMergeService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@CrossOrigin(origins = "**" , maxAge = 3600)
 @RestController
-@RequestMapping("/api/blacklist")
+@RequestMapping(path = "/api/blacklist", produces = MediaType.APPLICATION_JSON_VALUE)
 public class BlacklistController {
 
     @Autowired
