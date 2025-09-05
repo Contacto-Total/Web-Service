@@ -4,6 +4,7 @@ import com.foh.contacto_total_web_service.iam.domain.model.aggregates.User;
 import com.foh.contacto_total_web_service.iam.domain.model.queries.GetAllUsersQuery;
 import com.foh.contacto_total_web_service.iam.domain.model.queries.GetUserByEmailQuery;
 import com.foh.contacto_total_web_service.iam.domain.model.queries.GetUserByIdQuery;
+import com.foh.contacto_total_web_service.iam.domain.model.queries.GetUserByUsernameQuery;
 import com.foh.contacto_total_web_service.iam.domain.services.UserQueryService;
 import com.foh.contacto_total_web_service.iam.infrastructure.persistence.jpa.repositories.UserRepository;
 import org.springframework.stereotype.Service;
@@ -32,5 +33,10 @@ public class UserQueryServiceImpl implements UserQueryService {
     @Override
     public Optional<User> handle(GetUserByEmailQuery query) {
         return userRepository.findByEmail(query.email());
+    }
+
+    @Override
+    public Optional<User> handle(GetUserByUsernameQuery query) {
+        return userRepository.findByUsername(query.username());
     }
 }
