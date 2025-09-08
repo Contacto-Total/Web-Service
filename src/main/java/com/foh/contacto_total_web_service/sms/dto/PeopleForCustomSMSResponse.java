@@ -1,4 +1,4 @@
-package com.foh.contacto_total_web_service.sms_template.dto;
+package com.foh.contacto_total_web_service.sms.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

@@ -2,8 +2,7 @@ package com.foh.contacto_total_web_service.plantillaSMS.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.foh.contacto_total_web_service.sms.dto.GenerateMessagesRequest;
-import com.foh.contacto_total_web_service.sms.dto.PeopleForSMSResponse;
+import com.foh.contacto_total_web_service.sms.dto.*;
 import com.foh.contacto_total_web_service.plantillaSMS.dto.PlantillaSMSRequest;
 import com.foh.contacto_total_web_service.plantillaSMS.dto.PlantillaSMSToUpdateRequest;
 import com.foh.contacto_total_web_service.plantillaSMS.model.PlantillaSMS;
@@ -11,12 +10,13 @@ import com.foh.contacto_total_web_service.compromiso.repository.CompromisoReposi
 import com.foh.contacto_total_web_service.plantillaSMS.repository.PlantillaSMSRepository;
 import com.foh.contacto_total_web_service.sms.repository.SMSRepository;
 import com.foh.contacto_total_web_service.plantillaSMS.service.PlantillaSMSService;
-import com.foh.contacto_total_web_service.sms_template.dto.*;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -25,11 +25,10 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.Month;
-import java.time.YearMonth;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -317,22 +316,114 @@ public class PlantillaSMSServiceImpl implements PlantillaSMSService {
 
     // ACTUALIZADO
 
+    // === Helpers para normalizar y detectar placeholders usados por la plantilla ===
+    private String normalizeVar(String v) {
+        if (v == null) return "";
+        String x = v.toLowerCase().replaceAll("\\s+", "");
+        if (x.equals("baja_30")) x = "baja30";
+        if (x.equals("saldo_mora")) x = "saldomora";
+        if (x.equals("deuda_total")) x = "deudatotal";
+        return x;
+    }
+
+    private Set<String> extractVarsFromTemplateText(String tpl) {
+        // Devuelve claves normalizadas: nombre, baja30, saldomora, deudatotal, ltd, ltde, dia
+        Set<String> out = new java.util.LinkedHashSet<>();
+        if (tpl == null || tpl.isBlank()) return out;
+
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\\{([^}]+)\\}", java.util.regex.Pattern.CASE_INSENSITIVE)
+                .matcher(tpl);
+        while (m.find()) {
+            String raw = m.group(1).trim();
+            // caso {ltd/ltde}
+            if (raw.equalsIgnoreCase("ltd/ltde")) {
+                out.add("ltd");
+                out.add("ltde");
+            } else {
+                out.add(normalizeVar(raw));
+            }
+        }
+        return out;
+    }
+
+    /** Render completo (case-insensitive), con sinónimos y {ltd/ltde}. */
+    private String renderWithValuesCaseInsensitive(String tpl, Map<String,Object> values) {
+        if (tpl == null || tpl.isBlank()) return "";
+
+        // Construir un map de valores con claves “normalizadas” y sinónimos
+        Map<String,String> vals = new java.util.HashMap<>();
+        java.util.function.Function<String,String> get = k ->
+                String.valueOf(values.getOrDefault(k, "") == null ? "" : values.getOrDefault(k, ""));
+
+        // originales tal como vienen desde runDynamicQuery (usas claves en minúscula)
+        vals.put("nombre",      get.apply("nombre"));
+        vals.put("baja30",      get.apply("baja30"));
+        vals.put("saldomora",   values.containsKey("saldomora") ? get.apply("saldomora") : get.apply("saldo_mora"));
+        vals.put("deudatotal",  values.containsKey("deudatotal") ? get.apply("deudatotal") : get.apply("deuda_total"));
+        vals.put("ltd",         get.apply("ltd"));
+        vals.put("ltde",        get.apply("ltde"));
+        vals.put("ltd_final",   get.apply("ltd_final"));
+        vals.put("celular",     values.containsKey("celular") ? get.apply("celular") : get.apply("CELULAR"));
+        vals.put("documento",   get.apply("documento"));
+
+        // 1) reemplazos directos por clave exacta (case-insensitive)
+        String out = tpl;
+        for (var e : vals.entrySet()) {
+            String key = e.getKey();
+            String val = e.getValue() == null ? "" : e.getValue();
+            out = out.replaceAll("(?i)\\{\\s*" + java.util.regex.Pattern.quote(key) + "\\s*\\}",
+                    java.util.regex.Matcher.quoteReplacement(val));
+        }
+
+        // 2) sinónimos con espacios / camel
+        String[][] synonyms = new String[][] {
+                {"saldo mora","saldomora"},
+                {"deuda total","deudatotal"}
+        };
+        for (String[] s : synonyms) {
+            String pat = "\\{\\s*" + java.util.regex.Pattern.quote(s[0]) + "\\s*\\}";
+            out = out.replaceAll("(?i)" + pat,
+                    java.util.regex.Matcher.quoteReplacement(vals.getOrDefault(s[1], "")));
+        }
+
+        // 3) {ltd/ltde}: prioriza ltde si hay valor, luego ltd, luego ltd_final
+        String pick = !vals.getOrDefault("ltde","").isEmpty() ? vals.get("ltde")
+                : !vals.getOrDefault("ltd","").isEmpty()   ? vals.get("ltd")
+                : vals.getOrDefault("ltd_final", "");
+        out = out.replaceAll("(?i)\\{\\s*ltd\\s*/\\s*ltde\\s*\\}",
+                java.util.regex.Matcher.quoteReplacement(pick == null ? "" : pick));
+
+        // 4) {dia}
+        out = out.replaceAll("(?i)\\{\\s*dia\\s*\\}",
+                String.valueOf(java.time.LocalDate.now().getDayOfMonth()));
+
+        return out;
+    }
+
+
+
 
     private Optional<String> findTemplateByVariables(List<String> vars) {
-        // normaliza a minúsculas y llaves
-        var need = vars.stream()
-                .map(v -> "{"+v.toLowerCase()+"}")
+        // Normaliza variables pedidas
+        Set<String> need = vars.stream()
+                .map(v -> v == null ? "" : v.toLowerCase().replaceAll("\\s+",""))
+                .filter(s -> !s.isBlank())
                 .collect(Collectors.toSet());
 
         return plantillaSMSRepository.findAll().stream()
                 .map(PlantillaSMS::getTemplate)
                 .filter(tpl -> {
-                    String t = tpl.toLowerCase();
-                    for (String ph : need) if (!t.contains(ph)) return false;
+                    Set<String> inTpl = extractVarsFromTemplateText(tpl); // ya normaliza y expande {ltd/ltde} -> ltd, ltde
+                    // Para compatibles, todas las 'need' deben estar presentes en 'inTpl'
+                    for (String n : need) {
+                        if (!inTpl.contains(n)) return false;
+                    }
                     return true;
                 })
                 .findFirst();
     }
+
 
     @Override
     public DynamicPreviewResponse previewDynamic(DynamicQueryRequest req) {
@@ -372,34 +463,124 @@ public class PlantillaSMSServiceImpl implements PlantillaSMSService {
 
     @Override
     public File exportDynamic(DynamicQueryRequest req) {
-        var rows = smsRepository.runDynamicQuery(req, null); // SIN LÍMITE
+
+        // 0) Resolver la plantilla a usar (por nombre o inferida por variables como en preview)
+        String plantillaTexto = null;
+        if (req.getTemplateName() != null && !req.getTemplateName().isBlank()) {
+            plantillaTexto = plantillaSMSRepository.findByName(req.getTemplateName())
+                    .map(PlantillaSMS::getTemplate).orElse(null);
+        } else if (req.getVariables() != null && !req.getVariables().isEmpty()) {
+            plantillaTexto = findTemplateByVariables(req.getVariables()).orElse(null);
+        }
+        boolean canRender = plantillaTexto != null && !plantillaTexto.isBlank();
+
+        // 1) Unir variables solicitadas con variables requeridas por la plantilla
+        List<String> reqVars = (req.getVariables() == null) ? new java.util.ArrayList<>() : new java.util.ArrayList<>(req.getVariables());
+        // incluir variables que requiere la plantilla...
+        if (canRender) {
+            Set<String> needed = extractVarsFromTemplateText(plantillaTexto);
+            needed.remove("dia");
+            for (String v : needed) {
+                if (!reqVars.stream().anyMatch(x -> x.equalsIgnoreCase(v))) {
+                    reqVars.add(v);
+                }
+            }
+        }
+
+        // SIEMPRE agregar 'capital'
+        if (reqVars.stream().noneMatch(v -> "capital".equalsIgnoreCase(v))) {
+            reqVars.add("capital");
+        }
+
+        // Clonar request con variables extendidas si hiciera falta
+        DynamicQueryRequest req2 = new DynamicQueryRequest();
+        java.util.List<String> baseVars = (req.getVariables()==null) ? new java.util.ArrayList<>() : new java.util.ArrayList<>(req.getVariables());
+        if (baseVars.stream().noneMatch(v -> "capital".equalsIgnoreCase(v))) baseVars.add("capital");
+        req2.setVariables(reqVars);
+        req2.setVariables(baseVars);
+        req2.setTramos(req.getTramos());
+        req2.setDiasVenc(req.getDiasVenc());
+        req2.setExcluirPromesas(req.getExcluirPromesas());
+        req2.setExcluirCompromisos(req.getExcluirCompromisos());
+        req2.setExcluirBlacklist(req.getExcluirBlacklist());
+        req2.setTemplateName(req.getTemplateName()); // por consistencia
+
+        req2.setAddAmount(req.getAddAmount());       // usa monto variable
+
+        var rows = smsRepository.runDynamicQuery(req2, null); // SIN LÍMITE
 
         var wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook();
         var sh = wb.createSheet("Mensajes SMS");
 
 
+
+
+
         // Fila 1 (VARs)
         Row h2 = sh.createRow(0);
         int c = 0;
-        h2.createCell(c++).setCellValue("Celular");               // celular
-        for (int i = 0; i < req.getVariables().size(); i++) {
-            h2.createCell(c++).setCellValue("VAR" + (i + 1));
+        // 1) CELULAR
+        h2.createCell(c++).setCellValue("CELULAR");
+
+        // 2) si el usuario pidió NOMBRE, primero NOMBRE
+        boolean userWantsNombre = req.getVariables()!=null && req.getVariables().stream().anyMatch(v -> "nombre".equalsIgnoreCase(v));
+        if (userWantsNombre) h2.createCell(c++).setCellValue("Nombre");
+
+        // 3) CAPITAL (siempre)
+        h2.createCell(c++).setCellValue("CAPITAL");
+
+        // 4) Resto de variables del usuario (sin repetir nombre ni capital)
+        for (String v : req.getVariables()) {
+            String k = v.toLowerCase();
+            if ("nombre".equals(k) || "capital".equals(k)) continue;
+            h2.createCell(c++).setCellValue(headerFor(v));
         }
+
+        // 5) MENSAJE (si hay plantilla)
+        if (canRender) {
+            h2.createCell(c++).setCellValue("MENSAJE");
+        }
+
+
 
         // Filas de datos
         int r = 1;
         for (var rowValues : rows) {
             Row row = sh.createRow(r++);
             int j = 0;
-            // Celular primero (la clave viene como "celular" o "CELULAR")
-            Object cel = rowValues.getOrDefault("celular",
-                    rowValues.getOrDefault("CELULAR", ""));
+
+            Object cel = rowValues.getOrDefault("celular", rowValues.getOrDefault("CELULAR", ""));
             row.createCell(j++).setCellValue(cel == null ? "" : String.valueOf(cel));
 
+            // 2) NOMBRE si el usuario lo pidió
+            if (userWantsNombre) {
+                Object nombre = rowValues.get("nombre");
+                row.createCell(j++).setCellValue(nombre == null ? "" : String.valueOf(nombre));
+            }
+
+            // 3) CAPITAL (siempre)
+            // CAPITAL (siempre)
+            Object capital = rowValues.get("capital");
+            if (capital instanceof Number) {
+                row.createCell(j++).setCellValue(((Number) capital).doubleValue());
+            } else {
+                row.createCell(j++).setCellValue(capital == null ? "" : String.valueOf(capital));
+            }
+
+
+            // 4) Resto de variables del usuario (sin repetir nombre/capital)
             for (String v : req.getVariables()) {
+                String k = v.toLowerCase();
+                if ("nombre".equals(k) || "capital".equals(k)) continue;
                 Object val = rowValues.get(v);
                 if (val instanceof Number) row.createCell(j++).setCellValue(((Number) val).doubleValue());
-                else                       row.createCell(j++).setCellValue(val == null ? "" : String.valueOf(val));
+                else row.createCell(j++).setCellValue(val == null ? "" : String.valueOf(val));
+            }
+
+            // 5) MENSAJE
+            if (canRender) {
+                String mensaje = renderWithValuesCaseInsensitive(plantillaTexto, rowValues);
+                row.createCell(j++).setCellValue(mensaje);
             }
         }
 
@@ -413,14 +594,36 @@ public class PlantillaSMSServiceImpl implements PlantillaSMSService {
     private String headerFor(String var) {
         switch (var.toLowerCase()) {
             case "nombre": return "Nombre";
+            case "capital": return "CAPITAL";
             case "baja30": return "BAJA 30";
-            case "saldomora":
-            case "saldo_mora": return "SALDO MORA";
-            case "deudatotal":
-            case "deuda_total": return "DEUDA TOTAL";
+            case "saldomora": case "saldo_mora": return "SALDO MORA";
+            case "deudatotal": case "deuda_total": return "DEUDA TOTAL";
+            case "ltd": return "LTD";
+            case "ltde": return "LTDE";
             default: return var.toUpperCase();
         }
     }
+
+    // QUERY DINAMICO
+
+        private final NamedParameterJdbcTemplate jdbc;
+
+        public PlantillaSMSServiceImpl(NamedParameterJdbcTemplate jdbc) {
+            this.jdbc = jdbc;
+        }
+
+        @Override
+        public Optional<String> getTextoById(Integer id) {
+            String sql = "SELECT template FROM TEST_SMS_TEMPLATE WHERE id = :id"; // <--- ajusta nombres
+            try {
+                String txt = jdbc.queryForObject(sql, Map.of("id", id), String.class);
+                return Optional.ofNullable(txt);
+            } catch (EmptyResultDataAccessException e) {
+                return Optional.empty();
+            }
+        }
+
+
 
 
 }

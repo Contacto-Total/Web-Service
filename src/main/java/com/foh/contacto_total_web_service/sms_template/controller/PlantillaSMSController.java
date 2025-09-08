@@ -1,14 +1,14 @@
-package com.foh.contacto_total_web_service.plantillaSMS.controller;
+package com.foh.contacto_total_web_service.sms_template.controller;
 
+import com.foh.contacto_total_web_service.sms.dto.DynamicPreviewResponse;
+import com.foh.contacto_total_web_service.sms.dto.DynamicQueryRequest;
+import com.foh.contacto_total_web_service.sms_template.service.DynamicQueryService;
 import com.foh.contacto_total_web_service.sms.dto.GenerateMessagesRequest;
 import com.foh.contacto_total_web_service.plantillaSMS.dto.PlantillaSMSRequest;
 import com.foh.contacto_total_web_service.plantillaSMS.dto.PlantillaSMSToUpdateRequest;
 import com.foh.contacto_total_web_service.plantillaSMS.model.PlantillaSMS;
 import com.foh.contacto_total_web_service.plantillaSMS.service.PlantillaSMSService;
-import com.foh.contacto_total_web_service.sms_template.dto.DynamicPreviewRequest;
-import com.foh.contacto_total_web_service.sms_template.dto.DynamicPreviewResponse;
-import com.foh.contacto_total_web_service.sms_template.dto.DynamicPreviewRow;
-import com.foh.contacto_total_web_service.sms_template.dto.DynamicQueryRequest;
+import com.foh.contacto_total_web_service.sms_template.dto.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -17,11 +17,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.File;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 
 @CrossOrigin(origins = "**" , maxAge = 3600)
 @RestController
@@ -30,6 +32,8 @@ public class PlantillaSMSController {
 
     @Autowired
     private PlantillaSMSService plantillaSMSService;
+    @Autowired
+    private DynamicQueryService dynamicQueryService;
 
     @GetMapping
     public ResponseEntity<List<PlantillaSMS>> getPlantillasSMS() {
@@ -126,5 +130,51 @@ public class PlantillaSMSController {
         }
         return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
     }
+
+
+    // DINAMICO
+
+
+    @PostMapping("/dynamic-query")
+    public List<Map<String, Object>> runDynamicQuery(@RequestBody DynamicQueryRequest1 req) {
+        return dynamicQueryService.run(req);
+    }
+
+    /** Precheck para la consulta dinámica con plantilla ad-hoc. */
+    @PostMapping("/precheck")
+    public ResponseEntity<SmsPrecheckDTO.Result> precheck(@RequestBody SmsPrecheckDTO.DynamicRequest body) {
+        if (body == null || body.query == null || body.template == null) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        // Correr la misma consulta que usas para export (sin límite)
+        DynamicQueryRequest1 q = new DynamicQueryRequest1(
+                body.query.selects(),
+                body.query.tramo(),
+                body.query.condiciones(),
+                body.query.restricciones(),
+                null,                 // limit = null para evaluar todo
+                body.query.importeExtra(),
+                body.query.selectAll()
+        );
+
+        List<java.util.Map<String,Object>> rows = dynamicQueryService.run(q);
+        SmsPrecheckDTO.Result res = dynamicQueryService.precheckRows(rows, body.template);
+        return ResponseEntity.ok(res);
+    }
+
+    @PostMapping(value="/export")
+    public ResponseEntity<StreamingResponseBody> export(@RequestBody DynamicQueryRequest1 req) {
+        String filename = "resultado_" + java.time.LocalDate.now() + ".xlsx";
+
+        StreamingResponseBody stream = out -> dynamicQueryService.exportToExcel(req, out);
+
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=" + filename)
+                .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
+                .body(stream);
+    }
+
+
 
 }

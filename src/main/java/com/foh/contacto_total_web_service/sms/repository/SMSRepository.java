@@ -1,10 +1,8 @@
 package com.foh.contacto_total_web_service.sms.repository;
 
 import com.foh.contacto_total_web_service.sms.dto.PeopleForSMSResponse;
-import com.foh.contacto_total_web_service.sms_template.dto.DynamicPreviewRequest;
-import com.foh.contacto_total_web_service.sms_template.dto.DynamicPreviewRow;
-import com.foh.contacto_total_web_service.sms_template.dto.DynamicQueryRequest;
-import com.foh.contacto_total_web_service.sms_template.dto.PeopleForCustomSMSResponse;
+import com.foh.contacto_total_web_service.sms.dto.DynamicQueryRequest;
+import com.foh.contacto_total_web_service.sms.dto.PeopleForCustomSMSResponse;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
@@ -13,6 +11,7 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.util.*;
 import java.util.stream.Collectors;
+
 
 @Repository
 public class SMSRepository {
@@ -388,169 +387,125 @@ public class SMSRepository {
 
     }
 
-    // Actualizado
+
+    // acutalizado
 
 
 
-    private Long toLong(Object n) {
-        if (n == null) return null;
-        if (n instanceof Number) return ((Number) n).longValue();
-        try { return Long.parseLong(n.toString()); } catch (Exception e) { return null; }
+    // ===== helper para +monto =====
+    private String capPlus(String baseExpr, int amount) {
+        // CASE WHEN (base + amount) < deuda_total THEN base+amount ELSE base END
+        return "CASE WHEN (" + baseExpr + " + " + amount + ") < CEIL(SLDACTUALCONS) " +
+                "THEN (" + baseExpr + " + " + amount + ") ELSE " + baseExpr + " END";
     }
 
+
     public List<Map<String,Object>> runDynamicQuery(DynamicQueryRequest req, Integer limit) {
-        // 1) map de variables
+        // 1) map de variables "normales"
         Map<String,String> col = new HashMap<>();
-        col.put("nombre",     "CONCAT(UPPER(LEFT(LOWER(NOMBRE),1)), SUBSTRING(LOWER(NOMBRE),2))");
+        col.put("nombre",
+                "CONCAT(" +
+                        "  UPPER(LEFT(LOWER(TRIM(SUBSTRING_INDEX(NOMBRE, ' ', 1))), 1))," +
+                        "  SUBSTRING(LOWER(TRIM(SUBSTRING_INDEX(NOMBRE, ' ', 1))), 2)" +
+                        ")"
+        );
+        col.put("capital", "CEIL(SLDCAPCONS)");
         col.put("baja30",     "CEIL(`2`)");
         col.put("saldomora",  "CEIL(SLDMORA)");
         col.put("deudatotal", "CEIL(SLDACTUALCONS)");
+        col.put("documento",  "CAST(DOCUMENTO AS CHAR)");
+        col.put("celular",    "CAST(TELEFONOCELULAR AS CHAR)");
 
-        // ===== NUEVO: LTD (Tramo 5) =====
-        boolean add200   = Boolean.TRUE.equals(req.getAdd200());
-        boolean onlyLtde = Boolean.TRUE.equals(req.getOnlyLtde());
+        List<String> outKeys = new ArrayList<>();
 
-        String ltdExpr;
-        if (onlyLtde) {
-            // Solo LTDE (LTDESPECIAL)
-            // Si add200: sumar 200 solo si se mantiene < deuda total
-            if (add200) {
-                ltdExpr =
-                        "CASE " +
-                                "  WHEN LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 THEN " +
-                                "    CASE WHEN (CEIL(LTDESPECIAL) + 200) < CEIL(SLDACTUALCONS) " +
-                                "         THEN CEIL(LTDESPECIAL) + 200 " +
-                                "         ELSE CEIL(LTDESPECIAL) " +
-                                "    END " +
-                                "  ELSE NULL " +
-                                "END";
-            } else {
-                ltdExpr =
-                        "CASE " +
-                                "  WHEN LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 THEN CEIL(LTDESPECIAL) " +
-                                "  ELSE NULL " +
-                                "END";
-            }
-        } else {
-            // LTDE preferente; si no hay, usa LTD (`5`)
-            if (add200) {
-                ltdExpr =
-                        "CASE " +
-                                "  WHEN LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 THEN " +
-                                "    CASE WHEN (CEIL(LTDESPECIAL) + 200) < CEIL(SLDACTUALCONS) " +
-                                "         THEN CEIL(LTDESPECIAL) + 200 " +
-                                "         ELSE CEIL(LTDESPECIAL) " +
-                                "    END " +
-                                "  ELSE " +
-                                "    CASE WHEN (CEIL(`5`) + 200) < CEIL(SLDACTUALCONS) " +
-                                "         THEN CEIL(`5`) + 200 " +
-                                "         ELSE CEIL(`5`) " +
-                                "    END " +
-                                "END";
-            } else {
-                ltdExpr =
-                        "CASE " +
-                                "  WHEN LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 THEN CEIL(LTDESPECIAL) " +
-                                "  ELSE CEIL(`5`) " +
-                                "END";
+        // 2) SELECT
+        StringBuilder sql = new StringBuilder("SELECT CAST(TELEFONOCELULAR AS CHAR) AS CELULAR");
+        outKeys.add("celular");
+        List<String> vars = (req.getVariables() == null) ? List.of() : req.getVariables();
+
+
+        // 1) ¿Qué monto sumar?
+        int addAmt = 0;
+        if (req.getAddAmount() != null) {
+            addAmt = Math.max(0, req.getAddAmount());         // clamp: no negativos
+        } else if (Boolean.TRUE.equals(req.getAdd200())) {
+            addAmt = 200; // compat con el flag antiguo
+        }
+
+        // 2) ¿El usuario pidió LTD/LTDE?
+        boolean wantsLTD  = vars.stream().anyMatch(v -> "ltd".equalsIgnoreCase(v));
+        boolean wantsLTDE = vars.stream().anyMatch(v -> "ltde".equalsIgnoreCase(v));
+
+        // 3) Solo sumamos si hay LTD/LTDE y addAmt > 0
+        boolean sumEnabled = addAmt > 0 && (wantsLTD || wantsLTDE);
+
+        // 4) Expresiones
+        String ltdExpr  = sumEnabled ? capPlus("CEIL(`5`)", addAmt)           : "CEIL(`5`)";
+        String ltdeExpr = sumEnabled ? capPlus("CEIL(LTDESPECIAL)", addAmt)   : "CEIL(LTDESPECIAL)";
+
+        col.put("ltd",  ltdExpr);
+        col.put("ltde", ltdeExpr);
+
+        for (String vRaw : vars) {
+            String v = vRaw.toLowerCase();
+            String expr = col.get(v);
+            if (expr != null) {
+                sql.append(", ").append(expr).append(" AS ").append(aliasFromExpr(expr));
+                outKeys.add(v);
             }
         }
-        col.put("ltd", ltdExpr);
 
-        // 2) SELECT: siempre CELULAR primero y luego variables
-        StringBuilder sql = new StringBuilder(
-                "SELECT CAST(TELEFONOCELULAR AS CHAR) AS CELULAR"
-        );
-        if (req.getVariables() != null && !req.getVariables().isEmpty()) {
-            sql.append(", ");
-            sql.append(
-                    req.getVariables().stream()
-                            .map(v -> col.getOrDefault(v.toLowerCase(), v))
-                            .map(expr -> expr + " AS " + aliasFromExpr(expr))
-                            .collect(Collectors.joining(", "))
-            );
-        }
         sql.append(" FROM TEMP_MERGE WHERE 1=1 ");
-
-        boolean wantsBaja30 = req.getVariables()!=null &&
-                req.getVariables().stream().anyMatch(v -> v != null && v.equalsIgnoreCase("baja30"));
-        boolean wantsSaldoMora = req.getVariables()!=null &&
-                req.getVariables().stream().anyMatch(v -> v != null && v.equalsIgnoreCase("saldoMora"));
-        boolean tramo3 = req.getTramos()!=null && req.getTramos().contains(3);
-
-        // 3) filtros base
         sql.append(" AND TRIM(COALESCE(TELEFONOCELULAR,'')) <> '' ");
         sql.append(" AND TELEFONOCELULAR IS NOT NULL ");
         sql.append(" AND SLDCAPITALASIG > 0 ");
 
-        boolean isTramo5 = req.getTramos()!=null && req.getTramos().contains(5);
+        // ===== tramo 3 (baja30 / saldomora) =====
+        boolean wantsBaja30     = vars.stream().anyMatch(v -> "baja30".equalsIgnoreCase(v));
+        boolean wantsSaldoMora  = vars.stream().anyMatch(v -> "saldomora".equalsIgnoreCase(v));
+        boolean tramo3          = req.getTramos()!=null && req.getTramos().contains(3);
 
-        if (isTramo5) {
-            sql.append(" AND RANGOMORAPROYAG = 'Tramo 5' ");
-            sql.append(" AND SLDACTUALCONS > 0 ");
-
-            if (onlyLtde) {
-                // Solo LTDE disponible y menor a deuda
-                sql.append(" AND LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 ");
-                sql.append(" AND SLDACTUALCONS > COALESCE(LTDESPECIAL, 0) ");
-            } else {
-                // Alguno de los dos disponible y ambos por debajo de deuda
-                sql.append(" AND ((LTDESPECIAL <> '' AND LTDESPECIAL > 0) OR (`5` <> '' AND `5` > 0)) ");
-                sql.append(" AND SLDACTUALCONS > COALESCE(LTDESPECIAL, 0) ");
-                sql.append(" AND SLDACTUALCONS > COALESCE(`5`, 0) ");
-            }
-        }
-
-        // Caso BAJA 30 en Tramo 3: aplicar filtros adicionales
         if (wantsBaja30 && tramo3) {
-            // Asegurar monto BAJA30 > 0 (columna `2`)
             sql.append(" AND COALESCE(`2`,0) > 0 ");
             sql.append(" AND TRIM(COALESCE(`2`,'')) <> '' ");
-
-            // Mantener tu lógica de NO CONTENIDO de PAYS_TEMP
-            sql.append(" AND DOCUMENTO IN (");
-            sql.append("   SELECT CASE ");
-            sql.append("     WHEN A.IDENTITY_CODE LIKE 'D%' THEN RIGHT(A.IDENTITY_CODE,8) ");
-            sql.append("     WHEN A.IDENTITY_CODE LIKE 'C%' THEN TRIM(LEADING '0' FROM REPLACE(A.IDENTITY_CODE,'C','0')) ");
-            sql.append("     ELSE A.IDENTITY_CODE ");
-            sql.append("   END ");
-            sql.append("   FROM PAYS_TEMP A ");
-            sql.append("   WHERE CONTENCION = 'NO CONTENIDO'");
-            sql.append(" ) ");
+            sql.append(" AND DOCUMENTO IN (SELECT CASE " +
+                    " WHEN A.IDENTITY_CODE LIKE 'D%' THEN RIGHT(A.IDENTITY_CODE,8) " +
+                    " WHEN A.IDENTITY_CODE LIKE 'C%' THEN TRIM(LEADING '0' FROM REPLACE(A.IDENTITY_CODE,'C','0')) " +
+                    " ELSE A.IDENTITY_CODE END " +
+                    " FROM PAYS_TEMP A WHERE CONTENCION = 'NO CONTENIDO')");
         }
-
-        // >>> SALDO MORA: si quieres replicar tu query normal, aplica lo MISMO <<<
         if (wantsSaldoMora && tramo3) {
             sql.append(" AND COALESCE(`2`,0) > 0 ");
             sql.append(" AND TRIM(COALESCE(`2`,'')) <> '' ");
-            sql.append(" AND DOCUMENTO IN (");
-            sql.append("   SELECT CASE ");
-            sql.append("     WHEN A.IDENTITY_CODE LIKE 'D%' THEN RIGHT(A.IDENTITY_CODE,8) ");
-            sql.append("     WHEN A.IDENTITY_CODE LIKE 'C%' THEN TRIM(LEADING '0' FROM REPLACE(A.IDENTITY_CODE,'C','0')) ");
-            sql.append("     ELSE A.IDENTITY_CODE ");
-            sql.append("   END ");
-            sql.append("   FROM PAYS_TEMP A WHERE CONTENCION = 'NO CONTENIDO'");
-            sql.append(" ) ");
+            sql.append(" AND DOCUMENTO IN (SELECT CASE " +
+                    " WHEN A.IDENTITY_CODE LIKE 'D%' THEN RIGHT(A.IDENTITY_CODE,8) " +
+                    " WHEN A.IDENTITY_CODE LIKE 'C%' THEN TRIM(LEADING '0' FROM REPLACE(A.IDENTITY_CODE,'C','0')) " +
+                    " ELSE A.IDENTITY_CODE END " +
+                    " FROM PAYS_TEMP A WHERE CONTENCION = 'NO CONTENIDO')");
         }
 
 
-        // 4) filtros del request
-        if (req.getTramos()!=null && !req.getTramos().isEmpty()) {
-            String in = req.getTramos().stream()
-                    .map(t -> "'Tramo " + t + "'")
-                    .collect(Collectors.joining(","));
-            sql.append(" AND RANGOMORAPROYAG IN ("+in+") ");
+        boolean applyAdd200 = (wantsLTD || wantsLTDE) && Boolean.TRUE.equals(req.getAdd200());
+
+        boolean tramo5    = req.getTramos()!=null && req.getTramos().contains(5);
+
+        if (wantsLTD || wantsLTDE || tramo5) {
+            sql.append(" AND RANGOMORAPROYAG = 'Tramo 5' ");
+            sql.append(" AND SLDACTUALCONS > 0 ");
+
+            if (wantsLTD && wantsLTDE) {
+                sql.append(" AND ( (LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 AND SLDACTUALCONS > COALESCE(LTDESPECIAL,0)) " +
+                        "OR (`5` IS NOT NULL AND `5` > 0 AND SLDACTUALCONS > COALESCE(`5`,0)) ) ");
+            } else if (wantsLTDE) {
+                sql.append(" AND LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 ");
+                sql.append(" AND SLDACTUALCONS > COALESCE(LTDESPECIAL,0) ");
+            } else { // wantsLTD
+                sql.append(" AND `5` IS NOT NULL AND `5` > 0 ");
+                sql.append(" AND SLDACTUALCONS > COALESCE(`5`,0) ");
+            }
         }
-        if (req.getDiasVenc()!=null && !req.getDiasVenc().isEmpty()) {
-            String in = req.getDiasVenc().stream()
-                    .map(String::valueOf)
-                    .collect(Collectors.joining(","));
-            sql.append(" AND DAY(FECVENCIMIENTO) IN ("+in+") ");
-        }
-        if (Boolean.TRUE.equals(req.getOnlyLtde())) {
-            sql.append(" AND LTDESPECIAL IS NOT NULL AND LTDESPECIAL > 0 ");
-            sql.append(" AND SLDACTUALCONS > COALESCE(LTDESPECIAL,0) ");
-        }
+
+        // Exclusiones
         if (Boolean.TRUE.equals(req.getExcluirPromesas())) {
             sql.append(" AND DOCUMENTO NOT IN (SELECT DOCUMENTO FROM PROMESAS_HISTORICO WHERE PERIODO = DATE_FORMAT(CURDATE(), '%Y%m')) ");
         }
@@ -560,10 +515,11 @@ public class SMSRepository {
         if (Boolean.TRUE.equals(req.getExcluirBlacklist())) {
             sql.append(" AND DOCUMENTO NOT IN (SELECT DOCUMENTO FROM blacklist) ");
         }
+
         if (limit != null && limit > 0) {
             sql.append(" LIMIT ").append(limit);
         }
-        // --- DEBUG: imprime la query generada ---
+
         System.out.println("===== SQL DINÁMICA GENERADA =====");
         System.out.println(sql.toString());
         System.out.println("=================================");
@@ -571,33 +527,38 @@ public class SMSRepository {
         @SuppressWarnings("unchecked")
         List<Object[]> rows = entityManager.createNativeQuery(sql.toString()).getResultList();
 
-        // 5) mapear: r[0] = CELULAR, luego variables desde r[1]
+        // Map rows
         List<Map<String,Object>> out = new ArrayList<>();
         for (Object[] r : rows) {
             Map<String,Object> m = new LinkedHashMap<>();
-            m.put("celular", r[0]); // siempre incluimos el celular
-
-            for (int i = 0; i < (req.getVariables()==null?0:req.getVariables().size()); i++) {
-                String v = req.getVariables().get(i); // nombre, baja30, ...
-                m.put(v, r[i + 1]);                   // OFFSET +1
+            for (int i = 0; i < outKeys.size(); i++) {
+                String key = outKeys.get(i);
+                m.put(key, r[i]);
             }
             out.add(m);
         }
         return out;
     }
 
-
     private String aliasFromExpr(String expr) {
         String e = expr.toUpperCase();
-        if (e.contains("TELEFONOCELULAR")) return "CELULAR";
-        if (e.contains("`2`")) return "BAJA30";
+        if (e.contains("LTDESPECIAL")) return "LTDE";       // 1) primero LTDE
+        if (e.contains("`5`") || e.matches(".*\\b5\\b.*")) return "LTD"; // 2) luego LTD (por si faltan backticks)
+        if (e.contains("SLDACTUALCONS")) return "DEUDA_TOTAL";          // 3) después deuda
         if (e.contains("SLDMORA")) return "SALDO_MORA";
-        if (e.contains("SLDACTUALCONS")) return "DEUDA_TOTAL";
+        if (e.contains("`2`") || e.matches(".*\\b2\\b.*")) return "BAJA30";
         if (e.contains("NOMBRE")) return "NOMBRE";
-        // NUEVO:
-        if (e.contains("LTDESPECIAL") || e.contains("`5`")) return "LTD";
+        if (e.contains("SLDCAPCONS")) return "CAPITAL";
+        if (e.contains("DOCUMENTO")) return "DOCUMENTO";
+        if (e.contains("TELEFONOCELULAR")) return "CELULAR";
         return "COL";
     }
+
+
+    // QUERY DINAMICO
+
+
+
 
 
 
