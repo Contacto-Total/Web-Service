@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 public class GestionHistoricaAudiosResponse {
     private Integer idx;
     private String DOCUMENTO;
+    private String CARTERA;
     private String CLIENTE;
     private String FECHAGESTION;
     private String HORAGESTION;

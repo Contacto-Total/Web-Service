@@ -7,7 +7,6 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class GestionHistoricaAudiosDocumentoRequest {
+public class GestionHistoricaAudiosTramoRequest {
     String tramo;
-    String documento;
 }

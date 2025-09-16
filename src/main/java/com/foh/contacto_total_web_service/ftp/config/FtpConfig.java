@@ -1,5 +1,6 @@
 package com.foh.contacto_total_web_service.ftp.config;
 
+import org.apache.commons.net.ftp.FTPClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,6 +31,8 @@ public class FtpConfig {
         factory.setPort(port);
         factory.setUsername(user);
         factory.setPassword(password);
+
+        factory.setClientMode(FTPClient.PASSIVE_LOCAL_DATA_CONNECTION_MODE);
         return factory;
     }
 }

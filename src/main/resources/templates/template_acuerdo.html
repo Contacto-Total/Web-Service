@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Acuerdo de Pago</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 0px 10px;
+            border: none;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0px;
+            background-color: white;
+            font-size: 11px;
+        }
+        .document {
+            margin: 0 auto;
+            padding: 10px;
+            background: white;
+        }
+        .header {
+            padding: 5px 0;
+            position: relative;
+            width: 100%;
+        }
+        /* Cambio: Usar table para los logos en lugar de flexbox */
+        .logo-section {
+            width: 100%;
+            display: table;
+        }
+        .logo-left {
+            display: table-cell;
+            width: 50%;
+            text-align: left;
+            vertical-align: top;
+        }
+        .logo-right {
+            display: table-cell;
+            width: 50%;
+            text-align: right;
+            vertical-align: top;
+        }
+        .logo-section img {
+            height: 25px;
+        }
+        .date-location {
+            text-align: right;
+            font-size: 10px;
+            margin: 10px 0;
+        }
+        .line {
+            border-top: 2px solid black;
+            margin: 5px 0 10px 0;
+        }
+        .red-header {
+            background: #d32f2f;
+            color: white;
+            text-align: center;
+            padding: 8px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .client-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .client-table td {
+            padding: 5px 10px;
+            border: 1px solid #ccc;
+            width: 50%;
+            font-size: 11px;
+        }
+        .highlight {
+            font-weight: bold;
+        }
+        .congratulations {
+            padding: 15px;
+            text-align: center;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+        .date-highlight {
+            text-align: center;
+            font-weight: bold;
+            font-size: 12px;
+            padding: 10px 0;
+        }
+        .debt-header {
+            background: #d32f2f;
+            color: white;
+            text-align: center;
+            padding: 8px;
+            font-weight: bold;
+            font-size: 11px;
+        }
+        .debt-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+        .debt-table th, .debt-table td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: center;
+            font-size: 11px;
+        }
+        .no-border {
+            border: none !important;
+        }
+        .highlight-amount {
+            background: yellow;
+            font-weight: bold !important;
+            font-size: 12px;
+        }
+        .payment-header {
+            background: yellow;
+            padding: 5px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .payment-section {
+            background: yellow;
+            padding: 5px;
+            text-align: left;
+            font-size: 11px;
+        }
+        .instructions {
+            padding: 15px;
+            text-align: justify;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+        .section-header {
+            background: #e0e0e0;
+            padding: 5px 10px;
+            font-weight: bold;
+            font-size: 10px;
+        }
+        .section-content {
+            padding: 8px 10px;
+            font-size: 11px;
+        }
+        /* Cambio: Usar table para centros de pago en lugar de flexbox */
+        .centers-content {
+            width: 100%;
+            display: table;
+        }
+        .bcp-logo {
+            color: #203764;
+            font-weight: bold;
+            font-size: medium;
+            display: table-cell;
+            width: 80px;
+            text-align: center;
+            vertical-align: middle;
+        }
+        .center {
+            display: table-cell;
+            width: 100px;
+            text-align: center;
+            color: red;
+            vertical-align: middle;
+        }
+        .dni {
+            display: table-cell;
+            width: 150px;
+            text-align: center;
+            vertical-align: middle;
+            padding-left: 20px;
+        }
+        .contact-info {
+            padding: 8px 10px;
+            font-size: 11px;
+            text-align: justify;
+        }
+        /* Cambio: Usar table para la sección de firma en lugar de flexbox */
+        .signature-section {
+            margin-top: 20px;
+            padding: 8px 10px;
+            width: 100%;
+            display: table;
+        }
+        .signature-left {
+            display: table-cell;
+            width: 25%;
+            vertical-align: top;
+            text-align: left;
+        }
+        .signature-center {
+            display: table-cell;
+            width: 50%;
+            vertical-align: top;
+            text-align: center;
+            padding: 0 10px;
+        }
+        .signature-center img {
+            width: 80px;
+            height: auto;
+        }
+        .signature-right {
+            display: table-cell;
+            width: 25%;
+            vertical-align: top;
+            text-align: center;
+        }
+        .signature-right img {
+            width: 60px;
+        }
+        .signature-stamp {
+            border: 1px solid black;
+            border-radius: 50%;
+            padding: 10px;
+            font-size: 8px;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .footer-notes {
+            padding: 8px 10px;
+            font-size: 8px;
+            border-top: 1px solid #ccc;
+        }
+        .footer-notes p {
+            margin: 2px 0;
+        }
+        .black-bg {
+            background-color: black;
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+<div class="document">
+    <!-- Header con dos logos -->
+    <div class="header">
+        <div class="logo-section">
+            <div class="logo-left">
+                <img src="classpath:/static/images/logo.png" alt="Logo Financiera" />
+            </div>
+            <div class="logo-right">
+                <img src="classpath:/static/images/logo2.png" alt="Logo Secundario" />
+            </div>
+        </div>
+    </div>
+    <!-- Línea debajo de los logos -->
+    <div class="line"></div>
+    <!-- Fecha a la derecha -->
+    <div class="date-location" th:text="${fechaActual}">
+        [Fecha Actual]
+    </div>
+    <div class="red-header">
+        ACUERDO DE PAGO - CAMPAÑA LIMPIA TU DEUDA
+    </div>
+    <table class="client-table">
+        <tr>
+            <td>NOMBRE DEL TITULAR</td>
+            <td class="highlight" th:text="${nombreTitular}">[Nombre del Titular]</td>
+        </tr>
+        <tr>
+            <td>NUMERO DNI</td>
+            <td class="highlight" th:text="${dni}">[DNI]</td>
+        </tr>
+        <tr>
+            <td>Nro. CUENTA TARJETA Oh!</td>
+            <td class="highlight" th:text="${cuentaTarjeta}">[Cuenta Tarjeta]</td>
+        </tr>
+    </table>
+    <div class="congratulations">
+        ¡Felicitaciones!, ya se encuentra <strong>APROBADO</strong> su <strong>CAMPAÑA ESPECIAL</strong> con el cual estaría cancelando <strong>TODA SU DEUDA</strong>, lo puede pagar desde el día de hoy, se encontrará habilitado hasta este:
+    </div>
+    <div class="date-highlight" th:text="${fechaGestion}">
+        [Fecha de Gestión]
+    </div>
+    <div class="debt-header">
+        DETALLE DE DEUDA Y PROMOCIÓN APROBADA
+    </div>
+    <table class="debt-table">
+        <tr>
+            <th class="black-bg" th:if="${deudaTotal == montoAprobado}">&nbsp;</th>
+            <th th:if="${deudaTotal != montoAprobado}">DEUDA TOTAL</th>
+
+            <th class="black-bg" th:if="${deudaTotal == montoAprobado}">&nbsp;</th>
+            <th th:if="${deudaTotal != montoAprobado}">DESCUENTO</th>
+
+            <th>MONTO APROBADO</th>
+        </tr>
+        <tr>
+            <td class="black-bg" th:if="${deudaTotal == montoAprobado}">&nbsp;</td>
+            <td class="amount" th:if="${deudaTotal != montoAprobado}">
+                S/ <span th:text="${deudaTotal}">0.00</span>
+            </td>
+
+            <td class="black-bg" th:if="${deudaTotal == montoAprobado}">&nbsp;</td>
+            <td class="amount" th:if="${deudaTotal != montoAprobado}">
+                S/ <span th:text="${descuento}">0.00</span>
+            </td>
+
+            <td class="highlight-amount">S/ <span th:text="${montoAprobado}">0.00</span></td>
+        </tr>
+        <!-- SECCIÓN DINÁMICA DE FORMAS DE PAGO -->
+        <tr th:if="${formasPago != null and #lists.size(formasPago) > 0}">
+            <td class="payment-header">Formas de pago</td>
+            <td class="no-border"></td>
+            <td class="no-border"></td>
+        </tr>
+        <tr th:each="forma : ${formasPago}">
+            <td class="payment-section" th:text="${forma}"></td>
+            <td class="no-border"></td>
+            <td class="no-border"></td>
+        </tr>
+    </table>
+    <div class="instructions">
+        Acercarse con su DNI, tarjeta Oh! y este documento; Indicar en los cajeros que va a realizar un <strong>pago o abono</strong> a su Tarjeta Oh por el monto <strong>APROBADO</strong>, en caso de no tener la tarjeta puede pagar con el número de cuenta de su tarjeta consignada en la parte superior de este documento.
+    </div>
+    <div class="section-header">CENTROS DE PAGO VIRTUAL:</div>
+    <div class="section-content">
+        <div class="centers-content">
+            <div class="bcp-logo">BCP</div>
+            <div class="center">APP/WEB</div>
+            <div class="dni">Con su número de DNI</div>
+        </div>
+    </div>
+    <div class="section-header">CENTROS DE PAGO PRESENCIAL :</div>
+    <div class="section-content">
+        <div class="centers-content">
+            <div class="bcp-logo">BCP</div>
+            <div class="center">AGENTE/VENTANILLA</div>
+            <div class="dni">Presentando su DNI</div>
+        </div>
+    </div>
+    <div class="section-header">CONFIRMACIÓN DE PAGO:</div>
+    <div class="section-content">
+        Enviar foto del voucher de transacción al WhatsApp corporativo de Financiera Oh para su validación, registro, cancelación de deuda y retiro de cobranza.
+    </div>
+    <div class="section-header">TRAMITE DE CARTA DE NO ADEUDO:</div>
+    <div class="section-content">
+        A partir de 15 días hábiles de la cancelación ya puede solicitar el trámite su carta de no adeudo escribiendo al <strong>WhatsApp: 980732405 - OPCION 2</strong> o llamando al (01) 619-4800; (01) 631-5400; para que lo pueda recoger en plataforma o solicitar el envío a su correo.
+    </div>
+    <div class="contact-info">
+        Si desea mayor información, comuníquese a los siguientes números de contacto directo: Vía Telf.: o vía WhatsApp: <strong>968437436</strong>
+    </div>
+    <!-- Sección de firma con imágenes -->
+    <div class="signature-section">
+        <div class="signature-left">
+            <span>Atentamente,</span>
+        </div>
+        <div class="signature-center">
+            <img src="classpath:/static/images/logoBcp.png" alt="Logo BCP" />
+            <div style="text-align: center; padding: 10px;">
+                <strong>Romina Tapia Albinagorta &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Dpto.</strong><br />
+                <strong>COBRANZAS Oh!</strong>
+            </div>
+        </div>
+        <div class="signature-right">
+            <img src="classpath:/static/images/compromiso.png" alt="Logo Compromiso" />
+        </div>
+    </div>
+    <div class="footer-notes">
+        <p>(*) Si al recibir esta comunicación Ud. Ha cancelado o regularizado su deuda, por favor desestimar su contenido.</p>
+        <p>(*) Para acceder a las facilidades deberá estar incluida en la relación de cuentas pre -aprobado.</p>
+        <p>(*) Sujeto a variación, por negativa a facilidad.</p>
+    </div>
+</div>
+</body>
+</html>

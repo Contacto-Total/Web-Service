@@ -1,6 +1,6 @@
 package com.foh.contacto_total_web_service.gestionHistoricaAudios.service.impl;
 
-import com.foh.contacto_total_web_service.gestionHistoricaAudios.dto.GestionHistoricaAudiosResponse;
+import com.foh.contacto_total_web_service.gestionHistoricaAudios.dto.*;
 import com.foh.contacto_total_web_service.ftp.dto.RecordingDateRequest;
 import com.foh.contacto_total_web_service.gestionHistoricaAudios.repository.GestionHistoricaAudiosRepository;
 import com.foh.contacto_total_web_service.gestionHistoricaAudios.service.GestionHistoricaAudiosService;
@@ -18,9 +18,19 @@ public class GestionHistoricaAudiosServiceImpl implements GestionHistoricaAudios
     GestionHistoricaAudiosRepository gestionHistoricaAudiosRepository;
 
     @Override
-    public List<GestionHistoricaAudiosResponse> getGestionHistoricaAudiosByDateRange(RecordingDateRequest recordingDateRequest) {
+    public List<GestionHistoricaAudiosResponse> getGestionHistoricaAudiosByTramo(GestionHistoricaAudiosTramoRequest gestionHistoricaAudiosTramoRequest) {
+        String tramo = gestionHistoricaAudiosTramoRequest.getTramo();
+        if (tramo == null) {
+            throw new IllegalArgumentException("El tramo no puede ser nulo");
+        }
+        return gestionHistoricaAudiosRepository.getGestionHistoricaAudiosByTramo(tramo);
+    }
+
+    @Override
+    public List<GestionHistoricaAudiosResponse> getGestionHistoricaAudiosByDateRange(GestionHistoricaAudiosDateRangeRequest recordingDateRequest) {
         LocalDate startDate = recordingDateRequest.getStartDate();
         LocalDate endDate = recordingDateRequest.getEndDate();
+        String tramo = recordingDateRequest.getTramo();
 
         if (startDate == null || endDate == null) {
             throw new IllegalArgumentException("Las fechas de inicio y fin no pueden ser nulas");
@@ -29,20 +39,20 @@ public class GestionHistoricaAudiosServiceImpl implements GestionHistoricaAudios
         String startDateStr = startDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
         String endDateStr = endDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
 
-        return gestionHistoricaAudiosRepository.getGestionHistoricaAudiosByDateRange(startDateStr, endDateStr);
+        return gestionHistoricaAudiosRepository.getGestionHistoricaAudiosByDateRange(recordingDateRequest);
     }
 
     @Override
-    public List<GestionHistoricaAudiosResponse> getGestionHistoricaAudiosByDocumento(String documento) {
-        if (documento == null) {
+    public List<GestionHistoricaAudiosResponse> getGestionHistoricaAudiosByDocumento(GestionHistoricaAudiosDocumentoRequest documentoRequest) {
+        if (documentoRequest.getDocumento() == null) {
             throw new IllegalArgumentException("El documento no puede ser nulo");
         }
 
-        return gestionHistoricaAudiosRepository.getGestionHistoricaAudiosByDocumento(documento);
+        return gestionHistoricaAudiosRepository.getGestionHistoricaAudiosByDocumento(documentoRequest);
     }
 
     @Override
-    public List<GestionHistoricaAudiosResponse> getGestionHistoricaAudiosByTelefono(String telefono) {
+    public List<GestionHistoricaAudiosResponse> getGestionHistoricaAudiosByTelefono(GestionHistoricaAudiosTelefonoRequest telefono) {
         if (telefono == null) {
             throw new IllegalArgumentException("El telefono no puede ser nulo");
         }
