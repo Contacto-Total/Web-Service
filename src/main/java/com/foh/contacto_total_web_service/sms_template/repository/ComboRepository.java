@@ -42,7 +42,7 @@ public class ComboRepository {
 
     private Restricciones readRestricciones(String json) {
         try {
-            if (json == null || json.isEmpty()) return new Restricciones(false, false, false);
+            if (json == null || json.isEmpty()) return new Restricciones(false, false, false, false );
             return om.readValue(json, Restricciones.class);
         } catch (Exception e) {
             throw new RuntimeException("Error parseando restricciones_json: " + json, e);
@@ -134,7 +134,7 @@ public class ComboRepository {
                 .addValue("selectsJson", toJson(req.selects == null ? List.of() : req.selects))
                 .addValue("tramo", req.tramo)
                 .addValue("condJson", toJson(req.condiciones == null ? Set.of() : req.condiciones))
-                .addValue("restrJson", toJson(req.restricciones == null ? new Restricciones(false,false,false) : req.restricciones));
+                .addValue("restrJson", toJson(req.restricciones == null ? new Restricciones(false,false,false, false) : req.restricciones));
 
         jdbc.update(sql, params);
         return jdbc.getJdbcOperations().queryForObject("SELECT LAST_INSERT_ID()", Integer.class);
@@ -163,7 +163,7 @@ public class ComboRepository {
                 .addValue("selectsJson", toJson(req.selects == null ? List.of() : req.selects))
                 .addValue("tramo", req.tramo)
                 .addValue("condJson", toJson(req.condiciones == null ? Set.of() : req.condiciones))
-                .addValue("restrJson", toJson(req.restricciones == null ? new Restricciones(false,false,false) : req.restricciones))
+                .addValue("restrJson", toJson(req.restricciones == null ? new Restricciones(false,false,false, false) : req.restricciones))
                 .addValue("isActive", req.isActive == null ? Boolean.TRUE : req.isActive);
 
         return jdbc.update(sql, params);

@@ -155,7 +155,8 @@ public class PlantillaSMSController {
                 body.query.restricciones(),
                 null,                 // limit = null para evaluar todo
                 body.query.importeExtra(),
-                body.query.selectAll()
+                body.query.selectAll(),
+                body.query.template()
         );
 
         List<java.util.Map<String,Object>> rows = dynamicQueryService.run(q);
@@ -166,7 +167,6 @@ public class PlantillaSMSController {
     @PostMapping(value="/export")
     public ResponseEntity<StreamingResponseBody> export(@RequestBody DynamicQueryRequest1 req) {
         String filename = "resultado_" + java.time.LocalDate.now() + ".xlsx";
-
         StreamingResponseBody stream = out -> dynamicQueryService.exportToExcel(req, out);
 
         return ResponseEntity.ok()

@@ -44,6 +44,10 @@ public final class SmsTextUtil {
         t = replaceOne(t, "LTD", row.get("LTD"));
         t = replaceOne(t, "LTDE", row.get("LTDE"));
         t = replaceOne(t, "LTD_LTDE", row.get("LTD_LTDE"));
+        t = replaceOne(t, "NOMBRECOMPLETO", row.get("NOMBRECOMPLETO"));
+        t = replaceOne(t, "EMAIL", row.get("EMAIL"));
+        t = replaceOne(t, "NUMCUENTAPMCP", row.get("NUMCUENTAPMCP"));
+        t = replaceOne(t, "DIASMORA", row.get("DIASMORA"));
 
         return t;
     }

@@ -9,5 +9,6 @@ public record DynamicQueryRequest1(
         Restricciones restricciones,
         Integer limit,
         Integer importeExtra,
-        Boolean selectAll   //PARA PRUEBAS
+        Boolean selectAll,   //PARA PRUEBAS
+        String template
 ) {}

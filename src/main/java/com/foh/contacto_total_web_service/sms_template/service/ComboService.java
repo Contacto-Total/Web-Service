@@ -43,7 +43,7 @@ public class ComboService {
     public Integer create(CombosDTO.CreateRequest req) {
         // defaults
         if (req.restricciones == null) {
-            req.restricciones = new Restricciones(false, false, false);
+            req.restricciones = new Restricciones(false, false, false, false);
         }
 
         // El repository se encarga de crear la plantilla si hace falta
@@ -54,7 +54,7 @@ public class ComboService {
 
     public int update(CombosDTO.UpdateRequest req) {
         // defaults
-        if (req.restricciones == null) req.restricciones = new Restricciones(false,false,false);
+        if (req.restricciones == null) req.restricciones = new Restricciones(false,false,false, false);
         if (req.isActive == null) req.isActive = Boolean.TRUE;
 
         // 1) si trae texto, persiste en plantillasms
@@ -113,7 +113,8 @@ public class ComboService {
                 combo.restricciones,
                 limit,
                 null,
-                null
+                null,
+                resolveTemplateText(combo)
         );
     }
 
