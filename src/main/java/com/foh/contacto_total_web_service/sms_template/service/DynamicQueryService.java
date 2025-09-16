@@ -146,8 +146,6 @@ public class DynamicQueryService {
     public List<Map<String,Object>> run(DynamicQueryRequest1 req){
         Integer importeExtra = Optional.ofNullable(req.importeExtra()).orElse(0);
 
-
-
         List<String> selectList = new ArrayList<>();
         Set<String> seenAliases = new LinkedHashSet<>();
 
@@ -159,33 +157,19 @@ public class DynamicQueryService {
         addSelectOnce(selectList, SELECTS.get("EMAIL"),            seenAliases);
         addSelectOnce(selectList, SELECTS.get("NUMCUENTAPMCP"),    seenAliases);
 
-
-        // 1) este (correcto para la prueba con selectAll)
+        // selects solicitados
         List<String> selectsReq = new ArrayList<>(Optional.ofNullable(req.selects()).orElse(List.of()));
         for (String key : selectsReq) {
             String expr = SELECTS.get(key);
             if (expr != null) addSelectOnce(selectList, expr, seenAliases);
         }
 
-        // si selectAll: agrega el resto SIN duplicar
+        // si selectAll: agrega el resto SIN duplicar + LTD/LTDE base
         if (Boolean.TRUE.equals(req.selectAll())) {
-            for (var e : SELECTS.entrySet()) {
-                addSelectOnce(selectList, e.getValue(), seenAliases);
-            }
-            // LTD/LTDE “base” (solo si aún no estaban)
-            addSelectOnce(selectList, "CEIL(tm.`5`) AS LTD",         seenAliases);
-            addSelectOnce(selectList, "CEIL(tm.LTDESPECIAL) AS LTDE", seenAliases);
+            for (var e : SELECTS.entrySet()) addSelectOnce(selectList, e.getValue(), seenAliases);
+            addSelectOnce(selectList, "CEIL(tm.`5`) AS LTD",           seenAliases);
+            addSelectOnce(selectList, "CEIL(tm.LTDESPECIAL) AS LTDE",  seenAliases);
         }
-
-
-
-        //List<String> selectsReq = Optional.ofNullable(req.selects()).orElse(List.of());
-        /*if (!selectsReq.isEmpty()) {
-            for (String key : selectsReq) {
-                String expr = SELECTS.get(key);
-                if (expr != null) selectList.add(expr);
-            }
-        }*/
 
         // 2) FROM
         String from = " FROM TEMP_MERGE tm ";
@@ -200,28 +184,25 @@ public class DynamicQueryService {
         else if (tramo.equals("5")) where.add("tm.RANGOMORAPROYAG = 'Tramo 5'");
         else throw new IllegalArgumentException("Debes indicar tramo '3' o '5'");
 
-        // 3.2) INFERIR condiciones por SELECTS (LTD/LTDE/BAJA30)
+        // 3.2) flags por selects
         Set<String> selectsSet = new HashSet<>(selectsReq);
 
-        // Fechas dinámicas
         Map<String, List<Integer>> fechas = calcularFechasVencimiento();
 
-        boolean selLTD      = selectsSet.contains("LTD");
-        boolean selLTDE     = selectsSet.contains("LTDE");
-        boolean selLTD_LTDE = selectsSet.contains("LTD_LTDE");
-        boolean selBAJA30   = selectsSet.contains("BAJA30");
-        boolean selPKM      = selectsSet.contains("PKM");
-        boolean selMORA     = selectsSet.contains("SALDO_MORA");
-        boolean selBAJA30_MORA = selectsSet.contains("BAJA30_SALDOMORA");
-        boolean wantsPKM = Boolean.TRUE.equals(req.selectAll()) || selectsSet.contains("PKM");
+        boolean selLTD          = selectsSet.contains("LTD");
+        boolean selLTDE         = selectsSet.contains("LTDE");
+        boolean selLTD_LTDE     = selectsSet.contains("LTD_LTDE");
+        boolean selBAJA30       = selectsSet.contains("BAJA30");
+        boolean selMORA         = selectsSet.contains("SALDO_MORA");
+        boolean selBAJA30_MORA  = selectsSet.contains("BAJA30_SALDOMORA");
+        boolean selPKM          = selectsSet.contains("PKM") || Boolean.TRUE.equals(req.selectAll());
 
-        String fromPKM = " FROM TEMP_MERGE tm ";
-        if (wantsPKM) {
+        // Join PKM solo si se requiere
+        if (selPKM) {
             from += " LEFT JOIN FOH_TRAMO3_PKM pkm ON pkm.IDENTITY_CODE = tm.IDENTITY_CODE ";
         }
 
-
-        // === LTD dinámico con importeExtra ===
+        // === LTD/LTDE dinámicos con importeExtra (en SELECT) ===
         if (selectsSet.contains("LTD")) {
             addSelectOnce(selectList,
                     "CASE WHEN CEIL(tm.`5`) + " + importeExtra + " < CEIL(tm.SLDACTUALCONS) " +
@@ -230,8 +211,6 @@ public class DynamicQueryService {
                     seenAliases
             );
         }
-
-        // === LTDE dinámico con importeExtra ===
         if (selectsSet.contains("LTDE")) {
             addSelectOnce(selectList,
                     "CASE WHEN CEIL(tm.LTDESPECIAL) + " + importeExtra + " < CEIL(tm.SLDACTUALCONS) " +
@@ -240,8 +219,6 @@ public class DynamicQueryService {
                     seenAliases
             );
         }
-
-        // === LTD_LTDE dinámico con importeExtra ===
         if (selectsSet.contains("LTD_LTDE")) {
             addSelectOnce(selectList,
                     "CASE " +
@@ -256,69 +233,66 @@ public class DynamicQueryService {
             );
         }
 
-
-        int howMany = (selLTD ? 1 : 0) + (selLTDE ? 1 : 0);
-        if (howMany == 2) {
-            where.add("(" + WHERE_LTD + " AND " + WHERE_LTDE + ")");
-        } else if (howMany == 1) {
-            if (selLTD)  where.add(WHERE_LTD);
-            if (selLTDE) where.add(WHERE_LTDE);
+        // === WHERE para LTD/LTDE ===
+        if (selLTD && selLTDE) {
+            // si seleccionas ambas, no vacíes: OR
+            where.add("(" + WHERE_LTD + " OR " + WHERE_LTDE + ")");
+        } else if (selLTD) {
+            where.add(WHERE_LTD);
+        } else if (selLTDE) {
+            where.add(WHERE_LTDE);
         } else if (selLTD_LTDE) {
+            // combinado sigue siendo OR
             where.add("(" + WHERE_LTD + " OR " + WHERE_LTDE + ")");
         }
 
-        // ➜ Filtro adicional: asegurar que SLDACTUALCONS sea mayor a LTD y LTDE
-        if (selLTD) {
-            where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.`5`), '') AS DECIMAL(18,2)), 0)");
-        }
-        if (selLTDE) {
-            where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.LTDESPECIAL), '') AS DECIMAL(18,2)), 0)");
-        }
+        // comparativas con SLDACTUALCONS
+        if (selLTD)   where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.`5`), '') AS DECIMAL(18,2)), 0)");
+        if (selLTDE)  where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.LTDESPECIAL), '') AS DECIMAL(18,2)), 0)");
         if (selLTD_LTDE) {
             where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.`5`), '') AS DECIMAL(18,2)), 0)");
             where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.LTDESPECIAL), '') AS DECIMAL(18,2)), 0)");
         }
 
+        // === Condiciones de fecha para BAJA30 / MORA (definidas UNA sola vez) ===
+        List<Integer> fechasBaja = fechas.get("BAJA30");
+        List<Integer> fechasMora = fechas.get("MORA");
 
+        String diasBaja = (fechasBaja != null && !fechasBaja.isEmpty())
+                ? fechasBaja.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","))
+                : null;
 
-        if (selBAJA30) {
-            where.add(WHERE_BAJA30);
-            List<Integer> fechasBaja = fechas.get("BAJA30");
-            if (fechasBaja != null && !fechasBaja.isEmpty()) {
-                String dias = String.join(",", fechasBaja.stream().map(String::valueOf).toList());
-                where.add("DAY(tm.FECVENCIMIENTO) IN (" + dias + ")");
-            }
+        String diasMora = (fechasMora != null && !fechasMora.isEmpty())
+                ? fechasMora.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","))
+                : null;
+
+        String condBajaOk =
+                "(" +
+                        WHERE_BAJA30 +
+                        (diasBaja != null ? " AND DAY(tm.FECVENCIMIENTO) IN (" + diasBaja + ")" : "") +
+                        ")";
+
+        String condMoraOk =
+                "(" +
+                        "tm.SLDMORA IS NOT NULL AND tm.SLDMORA > 0" +
+                        (diasMora != null ? " AND DAY(tm.FECVENCIMIENTO) IN (" + diasMora + ")" : "") +
+                        ")";
+
+        // === WHERE para BAJA30 / SALDO_MORA por separado (NO tocamos la combinada) ===
+        if (selBAJA30 && selMORA) {
+            // incluir filas que cumplan BAJA30 O MORA
+            where.add("(" + condBajaOk + " OR " + condMoraOk + ")");
+        } else if (selBAJA30) {
+            where.add(condBajaOk);
+        } else if (selMORA) {
+            where.add(condMoraOk);
         }
 
-        if (selPKM) {
-            where.add(WHERE_PKM);
-        }
+        // PKM
+        if (selPKM) where.add(WHERE_PKM);
 
+        // === Variable combinada BAJA30_SALDOMORA (igual que antes, reusando condiciones) ===
         if (selBAJA30_MORA || Boolean.TRUE.equals(req.selectAll())) {
-            List<Integer> fechasBaja = fechas.get("BAJA30");
-            List<Integer> fechasMora = fechas.get("MORA");
-
-            String diasBaja = (fechasBaja != null && !fechasBaja.isEmpty())
-                    ? String.join(",", fechasBaja.stream().map(String::valueOf).toList())
-                    : null;
-            String diasMora = (fechasMora != null && !fechasMora.isEmpty())
-                    ? String.join(",", fechasMora.stream().map(String::valueOf).toList())
-                    : null;
-
-            // Regla de “cumple fecha” para cada caso
-            String condBajaOk =
-                    "(" +
-                            "  CAST(NULLIF(TRIM(tm.`2`), '') AS DECIMAL(18,2)) > 0" +
-                            (diasBaja != null ? " AND DAY(tm.FECVENCIMIENTO) IN (" + diasBaja + ")" : "") +
-                            ")";
-
-            String condMoraOk =
-                    "(" +
-                            "  tm.SLDMORA IS NOT NULL AND tm.SLDMORA > 0" +
-                            (diasMora != null ? " AND DAY(tm.FECVENCIMIENTO) IN (" + diasMora + ")" : "") +
-                            ")";
-
-            // ➜ SELECT: prioridad BAJA30; si no, MORA; si ninguno cumple: NULL
             String selectBajaMora =
                     "CASE " +
                             "  WHEN " + condBajaOk + " THEN CEIL(CAST(NULLIF(TRIM(tm.`2`), '') AS DECIMAL(18,2))) " +
@@ -330,38 +304,14 @@ public class DynamicQueryService {
             where.add("(" + condBajaOk + " OR " + condMoraOk + ")");
         }
 
-
-
-        Set<String> selectsSolicitados = new HashSet<>(Optional.ofNullable(req.selects()).orElse(List.of()));
-
-        // SALDO MORA
-        if (selMORA) {
-            where.add("tm.SLDMORA IS NOT NULL AND tm.SLDMORA > 0");
-            List<Integer> fechasMora = fechas.get("MORA");
-            if (fechasMora != null && !fechasMora.isEmpty()) {
-                String dias = String.join(",", fechasMora.stream().map(String::valueOf).toList());
-                where.add("DAY(tm.FECVENCIMIENTO) IN (" + dias + ")");
-            }
-        }
-
-        // 3.3) Promesas (solo leemos las tres válidas si vienen)
+        // 3.3) Promesas
         Set<String> conds = Optional.ofNullable(req.condiciones()).orElse(Set.of());
         List<String> prom = new ArrayList<>();
-        if (conds.contains("PROMESAS_HOY")) {
-            prom.add("(ph.Estado = 'Vigente' AND " + DATE_PROM + " = CURDATE())");
-        }
-        if (conds.contains("PROMESAS_MANANA")) {
-            prom.add("(ph.Estado = 'Vigente' AND " + DATE_PROM + " = CURDATE() + INTERVAL 1 DAY)");
-        }
-        if (conds.contains("PROMESAS_MANANA2")) {
-            prom.add("(ph.Estado = 'Vigente' AND DATEDIFF(" + DATE_PROM + ", CURDATE()) BETWEEN 0 AND 1)");
-        }
-        if (conds.contains("PROMESAS_ROTAS")) {
-            prom.add("(ph.Estado = 'Caida' AND " + DATE_PROM + " < CURDATE())");
-        }
-        if (!prom.isEmpty()) {
-            where.add(EXISTS_PROMESAS + String.join(" OR ", prom) + ")");
-        }
+        if (conds.contains("PROMESAS_HOY"))     prom.add("(ph.Estado = 'Vigente' AND " + DATE_PROM + " = CURDATE())");
+        if (conds.contains("PROMESAS_MANANA"))  prom.add("(ph.Estado = 'Vigente' AND " + DATE_PROM + " = CURDATE() + INTERVAL 1 DAY)");
+        if (conds.contains("PROMESAS_MANANA2")) prom.add("(ph.Estado = 'Vigente' AND DATEDIFF(" + DATE_PROM + ", CURDATE()) BETWEEN 0 AND 1)");
+        if (conds.contains("PROMESAS_ROTAS"))   prom.add("(ph.Estado = 'Caida' AND " + DATE_PROM + " < CURDATE())");
+        if (!prom.isEmpty()) where.add(EXISTS_PROMESAS + String.join(" OR ", prom) + ")");
 
         // 3.4) Restricciones
         Restricciones r = Optional.ofNullable(req.restricciones())
@@ -380,15 +330,9 @@ public class DynamicQueryService {
                     " OR (SELECT COUNT(*) FROM PAYS_TEMP WHERE CONTENCION = 'NO CONTENIDO') = 0" +
                     ")");
         }
-        if (r.excluirPromesasPeriodoActual()) {
-            where.add("tm.DOCUMENTO NOT IN (SELECT DOCUMENTO FROM PROMESAS_HISTORICO WHERE PERIODO = DATE_FORMAT(CURDATE(), '%Y%m'))");
-        }
-        if (r.excluirCompromisos()) {
-            where.add("tm.DOCUMENTO NOT IN (SELECT DOCUMENTO FROM COMPROMISOS)");
-        }
-        if (r.excluirBlacklist()) {
-            where.add("tm.DOCUMENTO NOT IN (SELECT DOCUMENTO FROM blacklist)");
-        }
+        if (r.excluirPromesasPeriodoActual()) where.add("tm.DOCUMENTO NOT IN (SELECT DOCUMENTO FROM PROMESAS_HISTORICO WHERE PERIODO = DATE_FORMAT(CURDATE(), '%Y%m'))");
+        if (r.excluirCompromisos())           where.add("tm.DOCUMENTO NOT IN (SELECT DOCUMENTO FROM COMPROMISOS)");
+        if (r.excluirBlacklist())             where.add("tm.DOCUMENTO NOT IN (SELECT DOCUMENTO FROM blacklist)");
 
         // 4) Compose SQL (sin limit si viene null)
         Integer limit = Optional.ofNullable(req.limit()).orElse(null);
@@ -401,9 +345,8 @@ public class DynamicQueryService {
                 ? Map.of("limit", limit)
                 : Collections.emptyMap();
 
-        // === DEBUG: arma COUNT(*) con el mismo FROM+WHERE
+        // === DEBUG COUNT ===
         String countSql = "SELECT COUNT(*) " + from + " WHERE " + String.join("\n AND ", where);
-
         try {
             Integer cnt = jdbc.queryForObject(countSql, params, Integer.class);
             System.out.println("\n--- DQ DEBUG ---");
@@ -414,36 +357,28 @@ public class DynamicQueryService {
             System.out.println("IMPORTE_EXTRA: " + req.importeExtra());
             System.out.println("\nCOUNT SQL:\n" + countSql);
             System.out.println("COUNT = " + cnt);
-            System.out.println("\nSELECT SQL:\n" + sql); // <- tu variable 'sql' ya creada arriba
+            System.out.println("\nSELECT SQL:\n" + sql);
             System.out.println("--- /DQ DEBUG ---\n");
         } catch (Exception e) {
             System.out.println("COUNT DEBUG ERROR: " + e.getMessage());
         }
 
-
-        // CONTADOR PARA VER ERROR
-
+        // DEBUG incremental (ajustado LTD/LTDE a OR cuando ambos)
         try {
             List<String> steps = new ArrayList<>();
-            steps.add(VALIDACIONES_TODOS);                                // 0
-            steps.add((tramo.equals("3") ? "tm.RANGOMORAPROYAG = 'Tramo 3'" : "tm.RANGOMORAPROYAG = 'Tramo 5'")); // 1
+            steps.add(VALIDACIONES_TODOS);
+            steps.add((tramo.equals("3") ? "tm.RANGOMORAPROYAG = 'Tramo 3'" : "tm.RANGOMORAPROYAG = 'Tramo 5'"));
 
-            // réplica EXACTA de lo que metiste en 'where' para este caso:
             if (selLTD && selLTDE) {
-                steps.add(WHERE_LTD);                                     // 2
-                steps.add(WHERE_LTDE);                                    // 3
+                steps.add("(" + WHERE_LTD + " OR " + WHERE_LTDE + ")");
             } else if (selLTD) {
                 steps.add(WHERE_LTD);
             } else if (selLTDE) {
                 steps.add(WHERE_LTDE);
             } else if (selLTD_LTDE) {
-                steps.add("(" + WHERE_LTD + " OR " + WHERE_LTDE + ")");   // 2 (cuando solo LTD_LTDE)
-                // y las dos comparaciones con SLDACTUALCONS:
-                steps.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.`5`), '' ) AS DECIMAL(18,2)),0)");
-                steps.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.LTDESPECIAL), '') AS DECIMAL(18,2)),0)");
+                steps.add("(" + WHERE_LTD + " OR " + WHERE_LTDE + ")");
             }
 
-            // restricciones activas (marca cada una si aplica en tu UI)
             if (r.noContenido()) steps.add(
                     "tm.DOCUMENTO in (SELECT CASE WHEN A.IDENTITY_CODE LIKE 'D%' THEN RIGHT(A.IDENTITY_CODE,8) WHEN A.IDENTITY_CODE LIKE 'C%' THEN TRIM(LEADING '0' FROM REPLACE(A.IDENTITY_CODE,'C','0')) ELSE A.IDENTITY_CODE END AS DOCUMENTO FROM PAYS_TEMP A WHERE RANGO_MORA_ASIG  IN ('4.[61-90]') AND CONTENCION = 'NO CONTENIDO') OR (SELECT COUNT(*) FROM PAYS_TEMP WHERE CONTENCION = 'NO CONTENIDO') = 0)"
             );
@@ -453,7 +388,6 @@ public class DynamicQueryService {
             if (r.excluirCompromisos()) steps.add("tm.DOCUMENTO NOT IN (SELECT DOCUMENTO FROM COMPROMISOS)");
             if (r.excluirBlacklist()) steps.add("tm.DOCUMENTO NOT IN (SELECT DOCUMENTO FROM blacklist)");
 
-            // ahora ve sumando y contando
             List<String> acc = new ArrayList<>();
             for (int i = 0; i < steps.size(); i++) {
                 acc.add(steps.get(i));
@@ -465,9 +399,9 @@ public class DynamicQueryService {
             System.out.println("INCR COUNT ERROR: " + e.getMessage());
         }
 
-
         return jdbc.queryForList(sql, params);
     }
+
 
     private String prettyHeader(String col) {
         if (col == null) return "";
