@@ -9,6 +9,7 @@ import com.foh.contacto_total_web_service.plantillaSMS.dto.PlantillaSMSToUpdateR
 import com.foh.contacto_total_web_service.plantillaSMS.model.PlantillaSMS;
 import com.foh.contacto_total_web_service.plantillaSMS.service.PlantillaSMSService;
 import com.foh.contacto_total_web_service.sms_template.dto.*;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.File;
+import java.io.IOException;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -210,6 +212,13 @@ public class PlantillaSMSController {
                 .body(stream);
     }
 
+    @GetMapping("/preview/{sessionId}/download-base")
+    public void previewDownloadBase(@PathVariable String sessionId, HttpServletResponse resp) throws IOException {
+        resp.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        resp.setHeader("Content-Disposition", "attachment; filename=\"sms_report.xlsx\"");
+        dynamicQueryService.previewDownloadBase(sessionId, resp.getOutputStream());
+        resp.flushBuffer(); // opcional, para empujar el stream
+    }
 
 
 }

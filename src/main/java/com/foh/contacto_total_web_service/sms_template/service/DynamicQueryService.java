@@ -176,12 +176,13 @@ public class DynamicQueryService {
             if (expr != null) addSelectOnce(selectList, expr, seenAliases);
         }
 
-        // si selectAll: agrega el resto SIN duplicar + LTD/LTDE base
+        /*
         if (Boolean.TRUE.equals(req.selectAll())) {
             for (var e : SELECTS.entrySet()) addSelectOnce(selectList, e.getValue(), seenAliases);
             addSelectOnce(selectList, "CEIL(tm.`5`) AS LTD",           seenAliases);
             addSelectOnce(selectList, "CEIL(tm.LTDESPECIAL) AS LTDE",  seenAliases);
         }
+        */
 
         // 2) FROM
         String from = " FROM TEMP_MERGE tm ";
@@ -207,7 +208,8 @@ public class DynamicQueryService {
         boolean selBAJA30       = selectsSet.contains("BAJA30");
         boolean selMORA         = selectsSet.contains("SALDO_MORA");
         boolean selBAJA30_MORA  = selectsSet.contains("BAJA30_SALDOMORA");
-        boolean selPKM          = selectsSet.contains("PKM") || Boolean.TRUE.equals(req.selectAll());
+        boolean wantsPKM = normalizeTemplateVars(Optional.ofNullable(req.template()).orElse("")).contains("{PKM}");
+        boolean selPKM = selectsSet.contains("PKM") || wantsPKM || Boolean.TRUE.equals(req.selectAll());
 
         // Join PKM solo si se requiere (¡esto sí debe ocurrir aunque no filtremos!)
         if (selPKM) {
@@ -1535,7 +1537,7 @@ public class DynamicQueryService {
         if (s == null) throw new IllegalStateException("Sesión no encontrada");
         touch(s);
 
-        // 1) Base “normal” (exactamente como exportas hoy)
+        // 1) Base “normal” (tal cual tu export normal)
         DynamicQueryRequest1 reqBase = new DynamicQueryRequest1(
                 s.originalQuery.selects(),
                 s.originalQuery.tramo(),
@@ -1549,7 +1551,7 @@ public class DynamicQueryService {
         List<Map<String,Object>> baseRows = this.run(reqBase);
         if (baseRows == null) baseRows = new ArrayList<>();
 
-        // Normaliza nombres bonitos igual que tu export normal
+        // Normaliza nombres bonitos como en el export normal
         for (var row : baseRows) {
             Object nc = row.get("NOMBRECOMPLETO");
             if (nc != null) row.put("NOMBRECOMPLETO", capWords(nc.toString()));
@@ -1557,25 +1559,30 @@ public class DynamicQueryService {
             if (n != null) row.put("NOMBRE", capWords(n.toString()));
         }
 
-        // 2) Filas resueltas del guiado -> mismas columnas que ya armas en previewDownload
-        List<Map<String,Object>> extraRows = new ArrayList<>();
+        // 2) Filas “guiadas” (las añadidas): construir desde la sesión, NO desde baseRows
         final String SMS_COL = "_SMS_";
-        String template = normalizeTemplateVars(Optional.ofNullable(s.template).orElse(""));
+        String tpl = normalizeTemplateVars(
+                Optional.ofNullable(s.template).orElse("")
+        );
 
-        // espejo combinadas para que el SMS salga bien
-        boolean wantsLTD   = template.contains("{LTD}");
-        boolean wantsLTDE  = template.contains("{LTDE}");
-        boolean wantsBM    = template.contains("{BAJA30}");
-        boolean wantsMora  = template.contains("{SALDO_MORA}");
-        boolean wantsCombL = template.contains("{LTD_LTDE}");
-        boolean wantsCombB = template.contains("{BAJA30_SALDOMORA}");
+        // columnas que el template podría necesitar para espejar combinadas <-> bases
+        boolean wantsLTD   = tpl.contains("{LTD}");
+        boolean wantsLTDE  = tpl.contains("{LTDE}");
+        boolean wantsBM    = tpl.contains("{BAJA30}");
+        boolean wantsMora  = tpl.contains("{SALDO_MORA}");
+        boolean wantsCombL = tpl.contains("{LTD_LTDE}");
+        boolean wantsCombB = tpl.contains("{BAJA30_SALDOMORA}");
 
+        List<Map<String,Object>> extraRows = new ArrayList<>();
         for (RowState rs : s.rows) {
             Map<String,Object> r = new LinkedHashMap<>(rs.working);
-            r.put("VARIABLE_USADA", rs.variableUsada == null ? "" : rs.variableUsada);
-            r.put("VALOR_MENSAJE",  rs.valorUsado == null ? 0  : rs.valorUsado);
 
-            // espejo combinadas <-> bases
+            // Asegura que la variable elegida tenga su columna con el valor usado
+            if (rs.variableUsada != null && rs.valorUsado != null) {
+                r.put(rs.variableUsada.toUpperCase(java.util.Locale.ROOT), rs.valorUsado);
+            }
+
+            // Espejos combinadas -> bases
             Object combL = r.get("LTD_LTDE");
             if (combL != null) {
                 if (wantsLTD  && r.get("LTD")  == null) r.put("LTD",  combL);
@@ -1586,6 +1593,7 @@ public class DynamicQueryService {
                 if (wantsBM   && r.get("BAJA30")     == null) r.put("BAJA30", combB);
                 if (wantsMora && r.get("SALDO_MORA") == null) r.put("SALDO_MORA", combB);
             }
+            // bases -> combinadas si el template las pide
             if (wantsCombL && r.get("LTD_LTDE") == null) {
                 Number ltde = (Number) r.get("LTDE");
                 Number ltd  = (Number) r.get("LTD");
@@ -1599,15 +1607,121 @@ public class DynamicQueryService {
                 if (chosen != null) r.put("BAJA30_SALDOMORA", chosen);
             }
 
-            String sms = SmsTextUtil.render(template, r);
+            // Render SMS
+            String sms = SmsTextUtil.render(tpl, r);
             r.put(SMS_COL, sms);
 
             extraRows.add(r);
         }
 
-        // 3) Merge: union de columnas y append de filas
-        exportAppend(baseRows, extraRows, out);
+        // 3) Cabeceras con el MISMO formato que el export normal:
+        //    Celular, SMS, y SOLO variables seleccionadas + variables nuevas usadas en el guiado
+        //    (sin VARIABLE_USADA ni VALOR_MENSAJE).
+        LinkedHashSet<String> headers = new LinkedHashSet<>();
+        headers.add("TELEFONOCELULAR");
+        headers.add(SMS_COL);
+
+        // order: primero las seleccionadas por el usuario (alias reales)
+        List<String> selected = new ArrayList<>(Optional.ofNullable(s.originalQuery.selects()).orElse(List.of()));
+        for (String k : selected) {
+            String expr = SELECTS.get(k);
+            String alias = (expr != null) ? aliasOf(expr) : k;
+            if (alias != null && !alias.isBlank()) headers.add(alias);
+        }
+
+        // luego, variables adicionales realmente usadas en el guiado (p.ej. PKM, SALDO_MORA, etc.)
+        // en un orden lógico.
+        List<String> pref = List.of("BAJA30","SALDO_MORA","PKM","CAPITAL","DEUDA_TOTAL","LTD","LTDE","LTD_LTDE","BAJA30_SALDOMORA");
+        Set<String> usedInGuided = new LinkedHashSet<>();
+        for (RowState rs : s.rows) {
+            if (rs.variableUsada != null) usedInGuided.add(rs.variableUsada.toUpperCase(java.util.Locale.ROOT));
+        }
+        for (String p : pref) if (usedInGuided.contains(p)) headers.add(p);
+        // por si quedó alguna no listada en pref
+        for (String p : usedInGuided) headers.add(p);
+
+        // 4) Escribir Excel (primero base, luego extra) SOLO con esas columnas
+        if (baseRows.isEmpty() && extraRows.isEmpty()) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+                    "No hay filas para exportar."
+            );
+        }
+
+        try (var wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook()) {
+            var sh = wb.createSheet("Consulta");
+
+            // Encabezados visibles (bonitos)
+            var hRow = sh.createRow(0);
+            var headerStyle = wb.createCellStyle();
+            var font = wb.createFont(); font.setBold(true);
+            headerStyle.setFont(font);
+
+            int cIdx = 0;
+            for (String h : headers) {
+                var cell = hRow.createCell(cIdx++);
+                cell.setCellValue(prettyHeader(h));
+                cell.setCellStyle(headerStyle);
+            }
+
+            // Asegura que las filas base tengan SMS (como en el normal)
+            for (var row : baseRows) {
+                if (!row.containsKey(SMS_COL)) {
+                    String sms = SmsTextUtil.render(tpl, row);
+                    row.put(SMS_COL, sms);
+                }
+            }
+
+            int rIdx = 1;
+            // base primero
+            for (var row : baseRows) {
+                var x = sh.createRow(rIdx++);
+                int ci = 0;
+                for (String h : headers) {
+                    var cell = x.createCell(ci++);
+                    writeCell(cell, row.get(h));
+                }
+            }
+            // luego las añadidas
+            for (var row : extraRows) {
+                var x = sh.createRow(rIdx++);
+                int ci = 0;
+                for (String h : headers) {
+                    var cell = x.createCell(ci++);
+                    writeCell(cell, row.get(h));
+                }
+            }
+
+            // auto-size
+            int idx = 0;
+            for (String ignored : headers) sh.autoSizeColumn(idx++);
+
+            wb.write(out);
+            out.flush();
+        }
     }
+
+    public void previewDownloadBase(String sessionId, OutputStream out) throws IOException {
+        PreviewSession s = sessions.get(sessionId);
+        if (s == null) throw new IllegalStateException("Sesión no encontrada");
+        touch(s);
+
+        DynamicQueryRequest1 reqBase = new DynamicQueryRequest1(
+                s.originalQuery.selects(),
+                s.originalQuery.tramo(),
+                s.originalQuery.condiciones(),
+                s.originalQuery.restricciones(),
+                null,                        // sin límite
+                s.originalQuery.importeExtra(),
+                s.originalQuery.selectAll(),
+                s.originalQuery.template()
+        );
+
+        exportToExcel(reqBase, out);  // ← tu export normal
+    }
+
+
+
 
 
 
