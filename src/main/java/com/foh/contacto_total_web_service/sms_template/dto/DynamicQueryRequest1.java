@@ -11,4 +11,4 @@ public record DynamicQueryRequest1(
         Integer importeExtra,
         Boolean selectAll,   //PARA PRUEBAS
         String template
-) {}
+){}

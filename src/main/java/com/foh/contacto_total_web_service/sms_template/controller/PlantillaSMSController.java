@@ -176,5 +176,40 @@ public class PlantillaSMSController {
     }
 
 
+    // en tu mismo controller
+
+    @PostMapping("/preview/init")
+    public ResponseEntity<PreviewDTO.InitResp> previewInit(@RequestBody PreviewDTO.InitReq body) {
+        if (body == null || body.query() == null) return ResponseEntity.badRequest().build();
+        return ResponseEntity.ok(dynamicQueryService.previewInit(body));
+    }
+
+    @PostMapping("/preview/choose")
+    public ResponseEntity<PreviewDTO.StepResp> previewChoose(@RequestBody PreviewDTO.ChooseReq body) {
+        if (body == null || body.sessionId() == null || body.variableElegida() == null)
+            return ResponseEntity.badRequest().build();
+        return ResponseEntity.ok(dynamicQueryService.previewChoose(body.sessionId(), body.variableElegida()));
+    }
+
+    @PostMapping("/preview/skip")
+    public ResponseEntity<PreviewDTO.StepResp> previewSkip(@RequestBody PreviewDTO.SkipReq body) {
+        if (body == null || body.sessionId() == null) return ResponseEntity.badRequest().build();
+        return ResponseEntity.ok(dynamicQueryService.previewSkip(body.sessionId()));
+    }
+
+    @PostMapping("/preview/download")
+    public ResponseEntity<StreamingResponseBody> previewDownloadMerged(@RequestBody PreviewDTO.DownloadReq body) {
+        if (body == null || body.sessionId() == null) return ResponseEntity.badRequest().build();
+
+        String filename = "resultado_" + java.time.LocalDate.now() + ".xlsx";
+        StreamingResponseBody stream = out -> dynamicQueryService.previewDownloadMerged(body.sessionId(), out);
+
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=" + filename)
+                .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
+                .body(stream);
+    }
+
+
 
 }

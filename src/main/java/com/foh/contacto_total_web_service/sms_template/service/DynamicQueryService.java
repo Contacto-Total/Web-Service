@@ -1,9 +1,12 @@
 package com.foh.contacto_total_web_service.sms_template.service;
 
 import com.foh.contacto_total_web_service.sms_template.dto.DynamicQueryRequest1;
+import com.foh.contacto_total_web_service.sms_template.dto.PreviewDTO;
 import com.foh.contacto_total_web_service.sms_template.dto.Restricciones;
 import com.foh.contacto_total_web_service.sms_template.dto.SmsPrecheckDTO;
 import com.foh.contacto_total_web_service.sms_template.util.SmsTextUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -100,6 +103,8 @@ public class DynamicQueryService {
             }
         }
         Integer finalProxima = proxima;
+
+
         List<Integer> fechasMora = proxima != null
                 ? List.of(proxima)
                 : List.of();
@@ -109,6 +114,7 @@ public class DynamicQueryService {
                 .filter(f -> !f.equals(finalProxima)) // usamos la copia final
                 .toList()
                 : fijos;
+
 
         return Map.of(
                 "MORA", fechasMora,
@@ -143,7 +149,11 @@ public class DynamicQueryService {
         }
     }
 
-    public List<Map<String,Object>> run(DynamicQueryRequest1 req){
+    // NUEVO PARA REEMPLAZO DE VARIABLES
+
+    private static final Logger log = LoggerFactory.getLogger(DynamicQueryService.class);
+
+    private List<Map<String,Object>> runInternal(DynamicQueryRequest1 req, boolean applyMetricFilters) {
         Integer importeExtra = Optional.ofNullable(req.importeExtra()).orElse(0);
 
         List<String> selectList = new ArrayList<>();
@@ -156,6 +166,8 @@ public class DynamicQueryService {
         addSelectOnce(selectList, SELECTS.get("NOMBRECOMPLETO"),   seenAliases);
         addSelectOnce(selectList, SELECTS.get("EMAIL"),            seenAliases);
         addSelectOnce(selectList, SELECTS.get("NUMCUENTAPMCP"),    seenAliases);
+
+
 
         // selects solicitados
         List<String> selectsReq = new ArrayList<>(Optional.ofNullable(req.selects()).orElse(List.of()));
@@ -197,7 +209,7 @@ public class DynamicQueryService {
         boolean selBAJA30_MORA  = selectsSet.contains("BAJA30_SALDOMORA");
         boolean selPKM          = selectsSet.contains("PKM") || Boolean.TRUE.equals(req.selectAll());
 
-        // Join PKM solo si se requiere
+        // Join PKM solo si se requiere (¡esto sí debe ocurrir aunque no filtremos!)
         if (selPKM) {
             from += " LEFT JOIN FOH_TRAMO3_PKM pkm ON pkm.IDENTITY_CODE = tm.IDENTITY_CODE ";
         }
@@ -233,37 +245,30 @@ public class DynamicQueryService {
             );
         }
 
-        // === WHERE para LTD/LTDE ===
-        if (selLTD && selLTDE) {
-            // si seleccionas ambas, no vacíes: OR
-            where.add("(" + WHERE_LTD + " OR " + WHERE_LTDE + ")");
-        } else if (selLTD) {
-            where.add(WHERE_LTD);
-        } else if (selLTDE) {
-            where.add(WHERE_LTDE);
-        } else if (selLTD_LTDE) {
-            // combinado sigue siendo OR
-            where.add("(" + WHERE_LTD + " OR " + WHERE_LTDE + ")");
+        // === EXTRA SELECTS (solo para GUIADO) ===
+        if (!applyMetricFilters) {
+            addSelectOnce(selectList, "tm.FECVENCIMIENTO AS _FECV_", seenAliases);
+            addSelectOnce(selectList, "CEIL(tm.SLDACTUALCONS) AS _SLD_", seenAliases);
+            addSelectOnce(selectList, "CEIL(CAST(NULLIF(TRIM(tm.`5`),'' ) AS DECIMAL(18,2))) AS _LTD_BASE_", seenAliases);
+            addSelectOnce(selectList, "CEIL(CAST(NULLIF(TRIM(tm.LTDESPECIAL),'' ) AS DECIMAL(18,2))) AS _LTDE_BASE_", seenAliases);
+            addSelectOnce(selectList, "CEIL(CAST(NULLIF(TRIM(tm.`2`),'' ) AS DECIMAL(18,2))) AS _BAJA30_BASE_", seenAliases);
+            addSelectOnce(selectList, "CEIL(tm.SLDMORA) AS _MORA_BASE_", seenAliases);
+            if (selPKM) {
+                addSelectOnce(selectList, "CEIL(CAST(NULLIF(TRIM(pkm.PKM),'' ) AS DECIMAL(18,2))) AS _PKM_BASE_", seenAliases);
+            }
         }
 
-        // comparativas con SLDACTUALCONS
-        if (selLTD)   where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.`5`), '') AS DECIMAL(18,2)), 0)");
-        if (selLTDE)  where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.LTDESPECIAL), '') AS DECIMAL(18,2)), 0)");
-        if (selLTD_LTDE) {
-            where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.`5`), '') AS DECIMAL(18,2)), 0)");
-            where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.LTDESPECIAL), '') AS DECIMAL(18,2)), 0)");
-        }
 
         // === Condiciones de fecha para BAJA30 / MORA (definidas UNA sola vez) ===
         List<Integer> fechasBaja = fechas.get("BAJA30");
         List<Integer> fechasMora = fechas.get("MORA");
 
         String diasBaja = (fechasBaja != null && !fechasBaja.isEmpty())
-                ? fechasBaja.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","))
+                ? String.join(",", fechasBaja.stream().map(String::valueOf).toList())
                 : null;
 
         String diasMora = (fechasMora != null && !fechasMora.isEmpty())
-                ? fechasMora.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","))
+                ? String.join(",", fechasMora.stream().map(String::valueOf).toList())
                 : null;
 
         String condBajaOk =
@@ -278,20 +283,42 @@ public class DynamicQueryService {
                         (diasMora != null ? " AND DAY(tm.FECVENCIMIENTO) IN (" + diasMora + ")" : "") +
                         ")";
 
-        // === WHERE para BAJA30 / SALDO_MORA por separado (NO tocamos la combinada) ===
-        if (selBAJA30 && selMORA) {
-            // incluir filas que cumplan BAJA30 O MORA
-            where.add("(" + condBajaOk + " OR " + condMoraOk + ")");
-        } else if (selBAJA30) {
-            where.add(condBajaOk);
-        } else if (selMORA) {
-            where.add(condMoraOk);
+        // === WHERE para LTD/LTDE ===
+        if (applyMetricFilters) {
+            if (selLTD && selLTDE) {
+                where.add("(" + WHERE_LTD + " OR " + WHERE_LTDE + ")");
+            } else if (selLTD) {
+                where.add(WHERE_LTD);
+            } else if (selLTDE) {
+                where.add(WHERE_LTDE);
+            } else if (selLTD_LTDE) {
+                where.add("(" + WHERE_LTD + " OR " + WHERE_LTDE + ")");
+            }
+
+            // comparativas con SLDACTUALCONS
+            if (selLTD)   where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.`5`), '') AS DECIMAL(18,2)), 0)");
+            if (selLTDE)  where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.LTDESPECIAL), '') AS DECIMAL(18,2)), 0)");
+            if (selLTD_LTDE) {
+                where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.`5`), '') AS DECIMAL(18,2)), 0)");
+                where.add("tm.SLDACTUALCONS > COALESCE(CAST(NULLIF(TRIM(tm.LTDESPECIAL), '') AS DECIMAL(18,2)), 0)");
+            }
+        }
+
+        // === WHERE para BAJA30 / SALDO_MORA por separado
+        if (applyMetricFilters) {
+            if (selBAJA30 && selMORA) {
+                where.add("(" + condBajaOk + " OR " + condMoraOk + ")");
+            } else if (selBAJA30) {
+                where.add(condBajaOk);
+            } else if (selMORA) {
+                where.add(condMoraOk);
+            }
         }
 
         // PKM
-        if (selPKM) where.add(WHERE_PKM);
+        if (applyMetricFilters && selPKM) where.add(WHERE_PKM);
 
-        // === Variable combinada BAJA30_SALDOMORA (igual que antes, reusando condiciones) ===
+        // === Variable combinada BAJA30_SALDOMORA (SELECT siempre; WHERE solo si filtramos)
         if (selBAJA30_MORA || Boolean.TRUE.equals(req.selectAll())) {
             String selectBajaMora =
                     "CASE " +
@@ -301,7 +328,9 @@ public class DynamicQueryService {
                             "END AS BAJA30_SALDOMORA";
 
             addSelectOnce(selectList, selectBajaMora, seenAliases);
-            where.add("(" + condBajaOk + " OR " + condMoraOk + ")");
+            if (applyMetricFilters) {
+                where.add("(" + condBajaOk + " OR " + condMoraOk + ")");
+            }
         }
 
         // 3.3) Promesas
@@ -345,61 +374,31 @@ public class DynamicQueryService {
                 ? Map.of("limit", limit)
                 : Collections.emptyMap();
 
-        // === DEBUG COUNT ===
-        String countSql = "SELECT COUNT(*) " + from + " WHERE " + String.join("\n AND ", where);
-        try {
-            Integer cnt = jdbc.queryForObject(countSql, params, Integer.class);
-            System.out.println("\n--- DQ DEBUG ---");
-            System.out.println("TRAMO: " + req.tramo());
-            System.out.println("SELECTS: " + req.selects());
-            System.out.println("CONDICIONES: " + req.condiciones());
-            System.out.println("RESTRICCIONES: " + req.restricciones());
-            System.out.println("IMPORTE_EXTRA: " + req.importeExtra());
-            System.out.println("\nCOUNT SQL:\n" + countSql);
-            System.out.println("COUNT = " + cnt);
-            System.out.println("\nSELECT SQL:\n" + sql);
-            System.out.println("--- /DQ DEBUG ---\n");
-        } catch (Exception e) {
-            System.out.println("COUNT DEBUG ERROR: " + e.getMessage());
-        }
+        // (logs debug iguales a los tuyos si quieres mantenerlos)
+        // ---- LOG de la consulta final ----
 
-        // DEBUG incremental (ajustado LTD/LTDE a OR cuando ambos)
-        try {
-            List<String> steps = new ArrayList<>();
-            steps.add(VALIDACIONES_TODOS);
-            steps.add((tramo.equals("3") ? "tm.RANGOMORAPROYAG = 'Tramo 3'" : "tm.RANGOMORAPROYAG = 'Tramo 5'"));
-
-            if (selLTD && selLTDE) {
-                steps.add("(" + WHERE_LTD + " OR " + WHERE_LTDE + ")");
-            } else if (selLTD) {
-                steps.add(WHERE_LTD);
-            } else if (selLTDE) {
-                steps.add(WHERE_LTDE);
-            } else if (selLTD_LTDE) {
-                steps.add("(" + WHERE_LTD + " OR " + WHERE_LTDE + ")");
-            }
-
-            if (r.noContenido()) steps.add(
-                    "tm.DOCUMENTO in (SELECT CASE WHEN A.IDENTITY_CODE LIKE 'D%' THEN RIGHT(A.IDENTITY_CODE,8) WHEN A.IDENTITY_CODE LIKE 'C%' THEN TRIM(LEADING '0' FROM REPLACE(A.IDENTITY_CODE,'C','0')) ELSE A.IDENTITY_CODE END AS DOCUMENTO FROM PAYS_TEMP A WHERE RANGO_MORA_ASIG  IN ('4.[61-90]') AND CONTENCION = 'NO CONTENIDO') OR (SELECT COUNT(*) FROM PAYS_TEMP WHERE CONTENCION = 'NO CONTENIDO') = 0)"
-            );
-            if (r.excluirPromesasPeriodoActual()) steps.add(
-                    "tm.DOCUMENTO NOT IN (SELECT DOCUMENTO FROM PROMESAS_HISTORICO WHERE PERIODO = DATE_FORMAT(CURDATE(), '%Y%m'))"
-            );
-            if (r.excluirCompromisos()) steps.add("tm.DOCUMENTO NOT IN (SELECT DOCUMENTO FROM COMPROMISOS)");
-            if (r.excluirBlacklist()) steps.add("tm.DOCUMENTO NOT IN (SELECT DOCUMENTO FROM blacklist)");
-
-            List<String> acc = new ArrayList<>();
-            for (int i = 0; i < steps.size(); i++) {
-                acc.add(steps.get(i));
-                String partialCount = "SELECT COUNT(*) " + from + " WHERE " + String.join(" AND ", acc);
-                Integer c = jdbc.queryForObject(partialCount, Collections.emptyMap(), Integer.class);
-                System.out.printf("COUNT STEP %02d = %d  | %s%n", i, c, steps.get(i));
-            }
-        } catch (Exception e) {
-            System.out.println("INCR COUNT ERROR: " + e.getMessage());
+        if (!applyMetricFilters) {
+            log.info("\n[GUIADO] SQL FINAL:\n{}\n[GUIADO] PARAMS: {}\n" +
+                            "[GUIADO] FLAGS -> selLTD={}, selLTDE={}, selLTD_LTDE={}, selBAJA30={}, selMORA={}, selBAJA30_MORA={}, selPKM={}\n" +
+                            "[GUIADO] CONTEXTO -> tramo={}, importeExtra={}, selectAll={}, selects={}",
+                    sql, params,
+                    selLTD, selLTDE, selLTD_LTDE, selBAJA30, selMORA, selBAJA30_MORA, selPKM,
+                    tramo, importeExtra, req.selectAll(), req.selects());
+        } else if (log.isDebugEnabled()) {
+            // Ruta normal (Generar sin guiado)
+            log.debug("\n[GENERAR] SQL FINAL:\n{}\n[GENERAR] PARAMS: {}", sql, params);
         }
 
         return jdbc.queryForList(sql, params);
+
+
+
+    }
+
+    //-----------------------------------------------------------------------------------------------
+
+    public List<Map<String,Object>> run(DynamicQueryRequest1 req) {
+        return runInternal(req, true);
     }
 
 
@@ -513,7 +512,45 @@ public class DynamicQueryService {
 
         // Render del SMS una sola vez
         final String SMS_COL = "_SMS_";
-        String template = Optional.ofNullable(req.template()).orElse("");
+        String template = normalizeTemplateVars(Optional.ofNullable(req.template()).orElse(""));
+
+        // ¿qué pide el template?
+        boolean wantsLTD   = template.contains("{LTD}");
+        boolean wantsLTDE  = template.contains("{LTDE}");
+        boolean wantsBM    = template.contains("{BAJA30}");
+        boolean wantsMora  = template.contains("{SALDO_MORA}");
+        boolean wantsCombL = template.contains("{LTD_LTDE}");
+        boolean wantsCombB = template.contains("{BAJA30_SALDOMORA}");
+
+// Espejo de combinadas -> bases
+        for (var row : rows) {
+            Object combL = row.get("LTD_LTDE");
+            if (combL != null) {
+                if (wantsLTD  && row.get("LTD")  == null) row.put("LTD",  combL);
+                if (wantsLTDE && row.get("LTDE") == null) row.put("LTDE", combL);
+            }
+
+            Object combB = row.get("BAJA30_SALDOMORA");
+            if (combB != null) {
+                if (wantsBM   && row.get("BAJA30")    == null)     row.put("BAJA30",     combB);
+                if (wantsMora && row.get("SALDO_MORA")== null)     row.put("SALDO_MORA", combB);
+            }
+
+            // (opcional) bases -> combinadas si el template pide la combinada
+            if (wantsCombL && row.get("LTD_LTDE") == null) {
+                Number ltde = (Number) row.get("LTDE");
+                Number ltd  = (Number) row.get("LTD");
+                Number chosen = (ltde != null && ltde.doubleValue() > 0) ? ltde : ltd;
+                if (chosen != null) row.put("LTD_LTDE", chosen);
+            }
+            if (wantsCombB && row.get("BAJA30_SALDOMORA") == null) {
+                Number b30  = (Number) row.get("BAJA30");
+                Number mora = (Number) row.get("SALDO_MORA");
+                Number chosen = (b30 != null && b30.doubleValue() > 0) ? b30 : mora;
+                if (chosen != null) row.put("BAJA30_SALDOMORA", chosen);
+            }
+        }
+
         if (!template.isBlank()) {
             for (var row : rows) {
                 String sms = SmsTextUtil.render(template, row);
@@ -705,4 +742,873 @@ public class DynamicQueryService {
 
             return res;
     }
+
+
+    // === INICIO: Soporte de sesiones de preview ===
+    private static final List<String> DEFAULT_CANDIDATAS = List.of(
+            "BAJA30","SALDO_MORA","PKM","LTD","LTDE","CAPITAL"
+    );
+
+    private static final Set<String> HIDDEN_CANDIDATAS =
+            Set.of("BAJA30_SALDOMORA", "LTD_LTDE");
+
+    // estado por fila
+    private static final class RowState {
+        String documento;
+        String nombre;
+        Map<String,Object> original; // fila original (valores crudos)
+        String variableUsada;        // null hasta que se resuelva
+        Number valorUsado;           // null hasta que se resuelva
+        Map<String,Object> working;  // copia mutable para render (donde podemos sobreescribir BAJA30 si tú así lo decides)
+    }
+
+    // sesión completa
+    private static final class PreviewSession {
+        String sessionId;
+        String template;
+        List<String> ordenElegido = new ArrayList<>();
+        List<String> candidatasPool;
+        List<RowState> rows;
+        long lastTouched = System.currentTimeMillis();
+
+        // NUEVO
+        Set<String> preSelected;   // variables que el usuario marcó antes del guiado
+
+        // Fechas / importe
+        List<Integer> fechasBaja;
+        List<Integer> fechasMora;
+        int importeExtra;
+
+
+        DynamicQueryRequest1 originalQuery;
+    }
+
+    private static Double numOrNull(Object v) {
+        if (v == null) return null;
+        if (v instanceof Number n) return n.doubleValue();
+        try { return Double.valueOf(String.valueOf(v).trim()); } catch (Exception e) { return null; }
+    }
+    private static boolean pos(Object v) {
+        Double d = numOrNull(v);
+        return d != null && d > 0.0;
+    }
+    private static Integer dayOfMonth(Object v) {
+        try {
+            if (v instanceof java.util.Date d) {
+                var cal = java.util.Calendar.getInstance();
+                cal.setTime(d);
+                return cal.get(java.util.Calendar.DAY_OF_MONTH);
+            }
+            if (v instanceof java.time.LocalDate ld) return ld.getDayOfMonth();
+            if (v instanceof java.time.LocalDateTime ldt) return ldt.getDayOfMonth();
+            if (v instanceof String s && !s.isBlank()) {
+                // intenta YYYY-MM-DD
+                try {
+                    return java.time.LocalDate.parse(s.substring(0, 10)).getDayOfMonth();
+                } catch (Exception ignore) { /* best effort */ }
+            }
+        } catch (Exception ignore) {}
+        return null;
+    }
+
+    /** Evalúa la MISMA lógica de "Generar" para cada variable */
+    private boolean cumpleRegla(
+            String var, Map<String,Object> r,
+            List<Integer> fechasBaja, List<Integer> fechasMora,
+            int /*unused in regla*/ importeExtra
+    ) {
+        // Valores base
+        Double sld     = numOrNull(r.get("_SLD_"));
+        Double baja30  = numOrNull(r.get("_BAJA30_BASE_"));
+        Double mora    = numOrNull(r.get("_MORA_BASE_"));
+        Double ltd     = numOrNull(r.get("_LTD_BASE_"));
+        Double ltde    = numOrNull(r.get("_LTDE_BASE_"));
+        Double pkm     = numOrNull(r.get("_PKM_BASE_"));
+        Double capital = numOrNull(r.get("CAPITAL"));
+        Integer diaV   = dayOfMonth(r.get("_FECV_"));
+
+        switch ((var == null ? "" : var).toUpperCase(Locale.ROOT)) {
+            case "BAJA30":
+                if (baja30 == null || baja30 <= 0) return false;
+                if (fechasBaja != null && !fechasBaja.isEmpty()) {
+                    if (diaV == null) return false;                    // <- bloquear si no hay fecha
+                    if (!fechasBaja.contains(diaV)) return false;
+                }
+                return true;
+
+            case "SALDO_MORA": {
+                if (mora == null || mora <= 0) return false;
+                if (fechasMora != null && !fechasMora.isEmpty()) {
+                    if (diaV == null) return false;                    // <- idem
+                    if (!fechasMora.contains(diaV)) return false;
+                }
+                return true;
+            }
+            case "LTD": {
+                return ltd != null && ltd > 0 && sld != null && sld > ltd;
+            }
+            case "LTDE": {
+                return ltde != null && ltde > 0 && sld != null && sld > ltde;
+            }
+            case "PKM": {
+                return pkm != null && pkm > 0;
+            }
+            case "BAJA30_SALDOMORA":{
+                // Igual que en SQL: BAJA30 OR MORA con sus respectivas restricciones
+                return cumpleRegla("BAJA30", r, fechasBaja, fechasMora, importeExtra)
+                        || cumpleRegla("SALDO_MORA", r, fechasBaja, fechasMora, importeExtra);
+            }
+            case "LTD_LTDE": {
+                    boolean okLTD  = (ltd  != null && ltd  > 0 && sld != null && sld > ltd);
+                    boolean okLTDE = (ltde != null && ltde > 0 && sld != null && sld > ltde);
+                    return okLTD || okLTDE;
+            }
+
+            case "CAPITAL": {
+                return capital != null && capital > 0;
+            }
+
+
+
+            default:
+                return false;
+        }
+    }
+
+    // helper: ¿la var del template está vacía/0 en esta fila?
+    private static boolean isEmptyOnRow(String var, Map<String,Object> r) {
+        switch (var.toUpperCase(Locale.ROOT)) {
+            case "BAJA30":     return numOrNull(r.get("_BAJA30_BASE_")) == null || numOrNull(r.get("_BAJA30_BASE_")) <= 0;
+            case "SALDO_MORA": return numOrNull(r.get("_MORA_BASE_"))   == null || numOrNull(r.get("_MORA_BASE_"))   <= 0;
+            case "LTD":        return numOrNull(r.get("_LTD_BASE_"))    == null || numOrNull(r.get("_LTD_BASE_"))    <= 0;
+            case "LTDE":       return numOrNull(r.get("_LTDE_BASE_"))   == null || numOrNull(r.get("_LTDE_BASE_"))   <= 0;
+            case "PKM":        return numOrNull(r.get("_PKM_BASE_"))    == null || numOrNull(r.get("_PKM_BASE_"))    <= 0;
+            case "CAPITAL": return numOrNull(r.get("CAPITAL")) == null || numOrNull(r.get("CAPITAL")) <= 0;
+            default:           return true; // para otras, trátalas como vacías
+        }
+    }
+
+    private static Set<String> tokensEnTemplate(String tpl) {
+        if (tpl == null) return Set.of();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\{([A-Z0-9_]+)\\}", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(tpl);
+        Set<String> out = new java.util.LinkedHashSet<>();
+        while (m.find()) out.add(m.group(1).toUpperCase(Locale.ROOT));
+        // normaliza MORA
+        if (out.contains("MORA")) out.add("SALDO_MORA");
+        return out;
+    }
+
+    /** Devuelve el valor "base" correspondiente a la variable (para poner en working/VALOR_MENSAJE) */
+    private static Number valorBaseDe(String var, Map<String,Object> r) {
+        switch ((var == null ? "" : var).toUpperCase(Locale.ROOT)) {
+            case "BAJA30":           return numOrNull(r.get("_BAJA30_BASE_"));
+            case "SALDO_MORA":       return numOrNull(r.get("_MORA_BASE_"));
+            case "LTD":              return numOrNull(r.get("_LTD_BASE_"));
+            case "LTDE":             return numOrNull(r.get("_LTDE_BASE_"));
+            case "PKM":              return numOrNull(r.get("_PKM_BASE_"));
+            case "BAJA30_SALDOMORA": {
+                Number v1 = numOrNull(r.get("_BAJA30_BASE_"));
+                Number v2 = numOrNull(r.get("_MORA_BASE_"));
+                return (v1 != null && v1.doubleValue() > 0) ? v1 : v2;}
+            case "LTD_LTDE": {
+                Number vLTDE = numOrNull(r.get("_LTDE_BASE_"));
+                Number vLTD  = numOrNull(r.get("_LTD_BASE_"));
+                // Preferimos LTDE si existe; si no, LTD
+                return (vLTDE != null && vLTDE.doubleValue() > 0) ? vLTDE : vLTD;
+            }
+            default:
+                return numOrNull(r.get(var));
+        }
+    }
+
+
+
+    private final java.util.concurrent.ConcurrentHashMap<String, PreviewSession> sessions = new java.util.concurrent.ConcurrentHashMap<>();
+
+    // TTL simple para memoria (30 min)
+    private void touch(PreviewSession s) {
+        if (s != null) s.lastTouched = System.currentTimeMillis();
+    }
+    private void gcSessions() {
+        long now = System.currentTimeMillis();
+        sessions.values().removeIf(s -> (now - s.lastTouched) > 30 * 60_000);
+    }
+
+    // Util: lee número positivo
+    private static Number num(Object v) {
+        if (v == null) return null;
+        if (v instanceof Number n) return n.doubleValue();
+        try { return Double.valueOf(String.valueOf(v).trim()); } catch (Exception e) { return null; }
+    }
+    private static boolean isPos(Object v) {
+        Number n = num(v);
+        return n != null && n.doubleValue() > 0.0;
+    }
+
+    // Dedupe por DOCUMENTO
+    private static List<Map<String,Object>> dedupeByDocumento(List<Map<String,Object>> rows) {
+        Map<String,Map<String,Object>> byDoc = new LinkedHashMap<>();
+        for (var r : rows) {
+            String doc = String.valueOf(r.getOrDefault("DOCUMENTO",""));
+            if (!doc.isBlank() && !byDoc.containsKey(doc)) byDoc.put(doc, r);
+        }
+        return new ArrayList<>(byDoc.values());
+    }
+
+    // Construye RowState desde fila
+    private RowState toRowState(Map<String,Object> r) {
+        RowState rs = new RowState();
+        rs.documento = String.valueOf(r.getOrDefault("DOCUMENTO",""));
+        rs.nombre = String.valueOf(r.getOrDefault("NOMBRE",""));
+        rs.original = new LinkedHashMap<>(r);
+        rs.working  = new LinkedHashMap<>(r);
+        return rs;
+    }
+
+    // Aplica una variable elegida SOLO a pendientes; resuelve si >0
+    private int applyVariable(PreviewSession s, String var) {
+        if ("LTD_LTDE".equalsIgnoreCase(var)) {
+            int resolvedNow = 0, logged = 0;
+            for (RowState rs : s.rows) {
+                if (rs.valorUsado != null) continue;
+                if (!cumpleRegla(var, rs.original, s.fechasBaja, s.fechasMora, s.importeExtra)) continue;
+
+                Double sld   = numOrNull(rs.original.get("_SLD_"));
+                Double baseL = numOrNull(rs.original.get("_LTD_BASE_"));
+                Double baseE = numOrNull(rs.original.get("_LTDE_BASE_"));
+
+                // Elige el que cumple; si ambos cumplen, prioriza LTDE
+                Double chosen = null;
+                if (baseE != null && baseE > 0 && sld != null && sld > baseE)      chosen = baseE;
+                else if (baseL != null && baseL > 0 && sld != null && sld > baseL) chosen = baseL;
+
+                // Aplica importeExtra con tope en SLDACTUALCONS
+                Double shown = chosen;
+                if (chosen != null && sld != null) {
+                    double candidate = chosen + s.importeExtra;
+                    if (candidate < sld) shown = candidate;
+                }
+
+                if (log.isDebugEnabled() && logged < 10) {
+                    log.debug("[LTD_LTDE][DECISION] doc={}, sld={}, ltdBase={}, ltdeBase={}, chosenBase={}, importeExtra={}, shown={}",
+                            rs.documento, sld, baseL, baseE, chosen, s.importeExtra, shown);
+                    logged++;
+                }
+
+                rs.variableUsada = var;
+                rs.valorUsado = (shown == null) ? 0 : shown;
+
+                // escribe el valor en LTD_LTDE y espeja si el template pide LTD/LTDE
+                String tpl = s.template == null ? "" : s.template;
+                rs.working.put("LTD_LTDE", rs.valorUsado);
+                if (tpl.contains("{LTD}"))  rs.working.put("LTD",  rs.valorUsado);
+                if (tpl.contains("{LTDE}")) rs.working.put("LTDE", rs.valorUsado);
+
+                resolvedNow++;
+            }
+            return resolvedNow;
+        }
+
+
+        int resolvedNow = 0;
+        for (RowState rs : s.rows) {
+            if (rs.valorUsado != null) continue;
+            if (!cumpleRegla(var, rs.original, s.fechasBaja, s.fechasMora, s.importeExtra)) continue;
+
+            rs.variableUsada = var;
+
+            Number baseN = valorBaseDe(var, rs.original);
+            Double base = (baseN == null) ? null : baseN.doubleValue();
+            Double sld  = numOrNull(rs.original.get("_SLD_"));
+
+            Double shown = base;
+            if (("LTD".equalsIgnoreCase(var) || "LTDE".equalsIgnoreCase(var)) && base != null && sld != null) {
+                double candidate = base + s.importeExtra;
+                shown = (candidate < sld) ? candidate : base;
+            }
+
+            rs.valorUsado = (shown == null) ? 0 : shown;
+            rs.working.put(var, rs.valorUsado);
+            // espejo inteligente según placeholders del template
+            String tpl = s.template == null ? "" : s.template;
+            if (!var.equalsIgnoreCase("BAJA30") && tpl.contains("{BAJA30}")) {
+                rs.working.put("BAJA30", rs.valorUsado);
+            }
+            if (!var.equalsIgnoreCase("SALDO_MORA") && tpl.contains("{SALDO_MORA}")) {
+                rs.working.put("SALDO_MORA", rs.valorUsado);
+            }
+            if (!var.equalsIgnoreCase("LTD") && tpl.contains("{LTD}")) {
+                rs.working.put("LTD", rs.valorUsado);
+            }
+            if (!var.equalsIgnoreCase("LTDE") && tpl.contains("{LTDE}")) {
+                rs.working.put("LTDE", rs.valorUsado);
+            }
+            if (!var.equalsIgnoreCase("PKM") && tpl.contains("{PKM}")) {
+                rs.working.put("PKM", rs.valorUsado);
+            }
+            resolvedNow++;
+        }
+        return resolvedNow;
+    }
+
+
+    // Calcula contadores de candidatas sobre PENDIENTES actuales
+    private List<com.foh.contacto_total_web_service.sms_template.dto.PreviewDTO.CandidateCount> candidateCounts(PreviewSession s) {
+        // pendientes = filas sin valorUsado
+        Set<String> pendDocs = new HashSet<>();
+        for (RowState rs : s.rows) if (rs.valorUsado == null) pendDocs.add(rs.documento);
+
+        List<com.foh.contacto_total_web_service.sms_template.dto.PreviewDTO.CandidateCount> out = new ArrayList<>();
+        for (String var : s.candidatasPool) {
+            // ya elegido en esta sesión
+            if (s.ordenElegido != null && s.ordenElegido.contains(var)) continue;
+
+            // NUEVO: también salta si fue preseleccionada antes del guiado
+            if (s.preSelected != null && s.preSelected.contains(var.toUpperCase(Locale.ROOT))) continue;
+
+            int can = 0;
+            for (RowState rs : s.rows) {
+                if (rs.valorUsado != null) continue;               // pendiente solamente
+                if (cumpleRegla(var, rs.original, s.fechasBaja, s.fechasMora, s.importeExtra)) {
+                    can++;
+                }
+            }
+            if (can > 0) out.add(new PreviewDTO.CandidateCount(var, can));
+        }
+        out.sort((a,b) -> Integer.compare(b.filasQueResuelve(), a.filasQueResuelve()));
+        return out;
+    }
+
+    // Render de preview (hasta N filas mezcladas: algunas resueltas + algunas pendientes)
+    private List<com.foh.contacto_total_web_service.sms_template.dto.PreviewDTO.PreviewItem> buildPreview(PreviewSession s, int max) {
+        List<com.foh.contacto_total_web_service.sms_template.dto.PreviewDTO.PreviewItem> out = new ArrayList<>();
+        for (RowState rs : s.rows) {
+            if (out.size() >= max) break;
+
+            String sms = SmsTextUtil.render(s.template == null ? "" : s.template, rs.working);
+            out.add(new com.foh.contacto_total_web_service.sms_template.dto.PreviewDTO.PreviewItem(
+                    rs.documento, rs.nombre, rs.variableUsada, rs.valorUsado, sms
+            ));
+        }
+        return out;
+    }
+
+    // === API: INIT ===
+    public PreviewDTO.InitResp previewInit(PreviewDTO.InitReq body) {
+        gcSessions();
+
+        DynamicQueryRequest1 q = body.query();
+        List<String> wanted = new ArrayList<>(Optional.ofNullable(q.selects()).orElse(List.of()));
+        Set<String> need = new LinkedHashSet<>(wanted);
+        List<String> pool = (body.candidatas() == null || body.candidatas().isEmpty())
+                ? DEFAULT_CANDIDATAS
+                : body.candidatas();
+        for (String v : pool) need.add(v);
+
+        DynamicQueryRequest1 qAll = new DynamicQueryRequest1(
+                new ArrayList<>(need),
+                q.tramo(),
+                q.condiciones(),
+                q.restricciones(),
+                null,                       // sin límite
+                q.importeExtra(),
+                q.selectAll(),
+                q.template()
+        );
+
+
+
+        log.info("[GUIADO] previewInit -> tramo={}, selectAll={}, importeExtra={}, selects={}, candidatasSolicitadas={}",
+                q.tramo(), q.selectAll(), q.importeExtra(), q.selects(),
+                (body.candidatas()==null? List.of() : body.candidatas()));
+
+
+        // Trae base con columnas _FECV_, _SLD_, _*_BASE_, etc.
+        List<Map<String,Object>> base = this.runInternal(qAll, false);
+        // ===== DEBUG FOCALIZADO LTD/LTDE =====
+        if (log.isDebugEnabled()) {
+            long total = base.size();
+
+            long okLTD = base.stream().filter(r ->
+                    numOrNull(r.get("_LTD_BASE_")) != null &&
+                            numOrNull(r.get("_SLD_"))      != null &&
+                            numOrNull(r.get("_LTD_BASE_"))  > 0 &&
+                            numOrNull(r.get("_SLD_"))      > numOrNull(r.get("_LTD_BASE_"))
+            ).count();
+
+            long okLTDE = base.stream().filter(r ->
+                    numOrNull(r.get("_LTDE_BASE_")) != null &&
+                            numOrNull(r.get("_SLD_"))       != null &&
+                            numOrNull(r.get("_LTDE_BASE_"))  > 0 &&
+                            numOrNull(r.get("_SLD_"))       > numOrNull(r.get("_LTDE_BASE_"))
+            ).count();
+
+            long okAlguno = base.stream().filter(r -> {
+                Double sld  = numOrNull(r.get("_SLD_"));
+                Double ltd  = numOrNull(r.get("_LTD_BASE_"));
+                Double ltde = numOrNull(r.get("_LTDE_BASE_"));
+                boolean a = (ltd  != null && ltd  > 0 && sld != null && sld > ltd);
+                boolean b = (ltde != null && ltde > 0 && sld != null && sld > ltde);
+                return a || b;
+            }).count();
+
+            long okAmbos = base.stream().filter(r -> {
+                Double sld  = numOrNull(r.get("_SLD_"));
+                Double ltd  = numOrNull(r.get("_LTD_BASE_"));
+                Double ltde = numOrNull(r.get("_LTDE_BASE_"));
+                boolean a = (ltd  != null && ltd  > 0 && sld != null && sld > ltd);
+                boolean b = (ltde != null && ltde > 0 && sld != null && sld > ltde);
+                return a && b;
+            }).count();
+
+            long okNinguno = total - okAlguno;
+
+            log.debug("[LTD/LTDE][BASE] total={}, okLTD={}, okLTDE={}, okAmbos={}, okNinguno={}",
+                    total, okLTD, okLTDE, okAmbos, okNinguno);
+
+
+
+            // Muestra de filas que NO califican por ninguna (máx 5)
+            int mostrados = 0;
+            for (var r : base) {
+                Double sld  = numOrNull(r.get("_SLD_"));
+                Double ltd  = numOrNull(r.get("_LTD_BASE_"));
+                Double ltde = numOrNull(r.get("_LTDE_BASE_"));
+                boolean okL = (ltd  != null && ltd  > 0 && sld != null && sld > ltd);
+                boolean okE = (ltde != null && ltde > 0 && sld != null && sld > ltde);
+                if (!(okL || okE)) {
+                    log.debug("[LTD/LTDE][NO-OK] doc={}, sld={}, ltdBase={}, ltdeBase={}",
+                            r.get("DOCUMENTO"), sld, ltd, ltde);
+                    if (++mostrados >= 5) break;
+                }
+            }
+        }
+// ===== FIN DEBUG LTD/LTDE =====
+
+
+        base = dedupeByDocumento(base);
+
+        // --- Construye sesión
+        PreviewSession s = new PreviewSession();
+        s.sessionId = java.util.UUID.randomUUID().toString();
+        s.template  = Optional.ofNullable(q.template()).orElse("");
+        // NUEVO: guarda las que venían desde la UI (antes del guiado)
+        s.preSelected = new java.util.HashSet<>();
+        for (String v : wanted) s.preSelected.add(v.toUpperCase(Locale.ROOT));
+
+        s.originalQuery = q; // la misma que vino de la UI
+
+        // Construye pool y quita lo preseleccionado
+        s.candidatasPool = new ArrayList<>();
+        for (String v : pool) {
+            String up = v.toUpperCase(Locale.ROOT);
+            if (!s.preSelected.contains(up) && !HIDDEN_CANDIDATAS.contains(up)) {
+                s.candidatasPool.add(v);  // solo candidatas visibles
+            }
+        }
+
+        // ⚠️ Primero setea fechas e importe para que cumplaRegla use esto
+        Map<String, List<Integer>> fechas = calcularFechasVencimiento();
+        s.fechasBaja = fechas.getOrDefault("BAJA30", List.of());
+        s.fechasMora = fechas.getOrDefault("MORA",   List.of());
+        s.importeExtra = Optional.ofNullable(q.importeExtra()).orElse(0);
+
+        Set<String> targetsTpl = tokensEnTemplate(s.template);
+
+        // Expande combinadas a sus bases para decidir resolvibles
+        Set<String> baseTargets = new LinkedHashSet<>();
+        if (targetsTpl.contains("BAJA30") || targetsTpl.contains("BAJA30_SALDOMORA")) {
+            baseTargets.add("BAJA30");
+            baseTargets.add("SALDO_MORA");
+        }
+        if (targetsTpl.contains("SALDO_MORA")) baseTargets.add("SALDO_MORA");
+        if (targetsTpl.contains("LTD") || targetsTpl.contains("LTD_LTDE")) {
+            baseTargets.add("LTD");
+            baseTargets.add("LTDE");
+        }
+        if (targetsTpl.contains("PKM")) baseTargets.add("PKM");
+        if (targetsTpl.contains("CAPITAL")) baseTargets.add("CAPITAL");
+
+        // Asegura que el pool contenga combinadas si el template las usa
+        if (targetsTpl.contains("BAJA30_SALDOMORA") && !s.candidatasPool.contains("BAJA30_SALDOMORA"))
+            s.candidatasPool.add("BAJA30_SALDOMORA");
+        if (targetsTpl.contains("LTD_LTDE") && !s.candidatasPool.contains("LTD_LTDE"))
+            s.candidatasPool.add("LTD_LTDE");
+
+        boolean usaCombLTD = s.candidatasPool.stream()
+                .anyMatch(v -> "LTD_LTDE".equalsIgnoreCase(v));
+        boolean usaCombBM  = s.candidatasPool.stream()
+                .anyMatch(v -> "BAJA30_SALDOMORA".equalsIgnoreCase(v));
+        // AND si el usuario marcó ambas LTD y LTDE, o si se usa la combinada
+        boolean bothSelectedLTDs =
+                s.preSelected != null &&
+                        s.preSelected.contains("LTD") &&
+                        s.preSelected.contains("LTDE");
+        boolean requireAndForLTD = usaCombLTD || bothSelectedLTDs;
+
+        // Solo consideramos como "variables vaciables" estas (ajusta si necesitas más)
+        final Set<String> VACIABLES = Set.of("LTD","LTDE","BAJA30","SALDO_MORA","PKM","CAPITAL");
+
+        // Construye la lista de targets a vaciar según lo que marcó el usuario en la UI
+        List<String> vacioTargets = new ArrayList<>();
+        if (s.preSelected != null) {
+            for (String v : s.preSelected) {
+                String up = v == null ? "" : v.toUpperCase(Locale.ROOT);
+                if (VACIABLES.contains(up)) vacioTargets.add(up);
+            }
+        }
+
+        // ✅ Filtra universo inicial: solo filas resolvibles por alguna candidata
+        List<Map<String,Object>> resolvibles = new ArrayList<>();
+        for (var r : base) {
+
+            // --- 1) ¿targets vacíos?
+            boolean vacios;
+
+            if (!vacioTargets.isEmpty()) {
+                // ✅ Se usa EXACTAMENTE lo que el usuario marcó
+                // Si marcó una -> vacíos = isEmptyOnRow(esa)
+                // Si marcó varias -> vacíos = AND de todas
+                boolean allEmpty = true;
+                for (String t : vacioTargets) {
+                    if (!isEmptyOnRow(t, r)) { allEmpty = false; break; }
+                }
+                vacios = allEmpty;
+            } else {
+                // ⬇️ Comportamiento anterior cuando el usuario no marcó nada para vaciar:
+                if (usaCombLTD && baseTargets.contains("LTD") && baseTargets.contains("LTDE")) {
+                    // combinada LTD_LTDE -> ambas vacías (AND)
+                    vacios = isEmptyOnRow("LTD", r) && isEmptyOnRow("LTDE", r);
+                } else if (usaCombBM && baseTargets.contains("BAJA30") && baseTargets.contains("SALDO_MORA")) {
+                    // combinada BAJA30_SALDOMORA -> ambas vacías (AND)
+                    vacios = isEmptyOnRow("BAJA30", r) && isEmptyOnRow("SALDO_MORA", r);
+                } else {
+                    // caso normal -> al menos una vacía (OR) según template
+                    vacios = baseTargets.isEmpty() ||
+                            baseTargets.stream().anyMatch(t -> isEmptyOnRow(t, r));
+                }
+            }
+
+            // --- 2) ¿alguna candidata aplica?
+            boolean candidataAplica = false;
+            for (String var : s.candidatasPool) {
+                if (cumpleRegla(var, r, s.fechasBaja, s.fechasMora, s.importeExtra)) {
+                    candidataAplica = true;
+                    break;
+                }
+            }
+
+            if (vacios && candidataAplica) {
+                resolvibles.add(r);
+            }
+        }
+
+        // ✅ Usa resolvibles, no base
+        s.rows = new ArrayList<>();
+        for (var r : resolvibles) s.rows.add(toRowState(r));
+
+        log.info("[GUIADO] Filas resolvibles tras filtro inicial (targets vacíos + candidata aplica): {}", resolvibles.size());
+
+
+        sessions.put(s.sessionId, s);
+        touch(s);
+
+        int total = s.rows.size();
+        int resueltas = 0;
+        int pendientes = total;
+        var cand = candidateCounts(s);        // cuenta sobre PENDIENTES
+        var preview = buildPreview(s, 10);
+
+        log.info("[GUIADO] Sesión {} -> total={}, resueltas=0, pendientes={}",
+                s.sessionId, s.rows.size(), s.rows.size());
+
+        return new PreviewDTO.InitResp(s.sessionId, total, resueltas, pendientes, cand, preview);
+    }
+
+    // === API: CHOOSE ===
+    public com.foh.contacto_total_web_service.sms_template.dto.PreviewDTO.StepResp previewChoose(String sessionId, String var) {
+        PreviewSession s = sessions.get(sessionId);
+        if (s == null) throw new IllegalStateException("Sesión no encontrada");
+        touch(s);
+
+        s.ordenElegido.add(var);
+        int resolved = applyVariable(s, var);
+
+        int total = s.rows.size();
+        int resueltas = 0;
+        for (RowState rs : s.rows) if (rs.valorUsado != null) resueltas++;
+        int pendientes = total - resueltas;
+
+        var cand = candidateCounts(s);
+        var preview = buildPreview(s, 10);
+
+        return new com.foh.contacto_total_web_service.sms_template.dto.PreviewDTO.StepResp(
+                s.sessionId, total, resueltas, pendientes, cand, preview
+        );
+    }
+
+    // === API: SKIP (no hace nada, sólo recalcula contadores y preview) ===
+    public com.foh.contacto_total_web_service.sms_template.dto.PreviewDTO.StepResp previewSkip(String sessionId) {
+        PreviewSession s = sessions.get(sessionId);
+        if (s == null) throw new IllegalStateException("Sesión no encontrada");
+        touch(s);
+
+        int total = s.rows.size();
+        int resueltas = 0;
+        for (RowState rs : s.rows) if (rs.valorUsado != null) resueltas++;
+        int pendientes = total - resueltas;
+
+        var cand = candidateCounts(s);
+        var preview = buildPreview(s, 10);
+
+        return new com.foh.contacto_total_web_service.sms_template.dto.PreviewDTO.StepResp(
+                s.sessionId, total, resueltas, pendientes, cand, preview
+        );
+    }
+
+    // === API: DOWNLOAD (exporta con VARIABLE_USADA y VALOR_MENSAJE) ===
+    public void previewDownload(String sessionId, OutputStream out) throws IOException {
+        PreviewSession s = sessions.get(sessionId);
+        if (s == null) throw new IllegalStateException("Sesión no encontrada");
+        touch(s);
+
+        // Construye filas "finales" para export
+        List<Map<String,Object>> rows = new ArrayList<>();
+        for (RowState rs : s.rows) {
+            Map<String,Object> r = new LinkedHashMap<>(rs.working);
+            // columnas adicionales
+            r.put("VARIABLE_USADA", rs.variableUsada == null ? "" : rs.variableUsada);
+            r.put("VALOR_MENSAJE",  rs.valorUsado == null ? 0 : rs.valorUsado);
+            // Render del SMS con working (ya contiene sustituciones por variable usada)
+            String template = normalizeTemplateVars(s.template == null ? "" : s.template);
+            String sms = SmsTextUtil.render(template, r);
+            r.put("_SMS_", sms);
+            rows.add(r);
+        }
+
+        // Exportar SOLO columnas seleccionadas + Celular + SMS + VALOR_MENSAJE + VARIABLE_USADA
+        // Reutilizamos tu exportador pero con pequeña variante:
+        exportResolved(rows, out);
+    }
+
+    // Exportador para lista ya resuelta
+    private void exportResolved(List<Map<String,Object>> rows, OutputStream out) throws IOException {
+        if (rows == null) rows = new ArrayList<>();
+        if (rows.isEmpty()) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+                    "No hay filas para exportar."
+            );
+        }
+
+        try (var wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook()) {
+            var sh = wb.createSheet("Consulta");
+
+            // headers
+            LinkedHashSet<String> headers = new LinkedHashSet<>();
+            // orden sugerido
+            List<String> prefer = List.of("TELEFONOCELULAR","_SMS_","VARIABLE_USADA","VALOR_MENSAJE",
+                    "NOMBRE","DOCUMENTO","BAJA30","SALDO_MORA","PKM","CAPITAL","DEUDA_TOTAL");
+            for (String p : prefer) headers.add(p);
+            // añade los demás presentes
+            for (var r : rows) headers.addAll(r.keySet());
+
+            var hRow = sh.createRow(0);
+            var headerStyle = wb.createCellStyle();
+            var font = wb.createFont(); font.setBold(true);
+            headerStyle.setFont(font);
+
+            int cIdx = 0;
+            for (String h : headers) {
+                var cell = hRow.createCell(cIdx++);
+                cell.setCellValue(prettyHeader(h));
+                cell.setCellStyle(headerStyle);
+            }
+
+            int rIdx = 1;
+            for (var row : rows) {
+                var x = sh.createRow(rIdx++);
+                int ci = 0;
+                for (String h : headers) {
+                    var cell = x.createCell(ci++);
+                    writeCell(cell, row.get(h));
+                }
+            }
+
+            for (int i = 0; i < headers.size(); i++) sh.autoSizeColumn(i);
+            wb.write(out);
+            out.flush();
+        }
+    }
+// === FIN: Soporte de sesiones de preview ===
+
+    // Normaliza tokens para que coincidan con los alias reales del SELECT
+    private static String normalizeTemplateVars(String tpl) {
+        if (tpl == null) return "";
+        String t = tpl;
+
+        // equivalentes y variantes con espacios
+        t = t.replaceAll("(?i)\\{\\s*mora\\s*\\}", "{SALDO_MORA}");
+        t = t.replaceAll("(?i)\\{\\s*baja\\s*30\\s*\\}", "{BAJA30}");
+        t = t.replaceAll("(?i)\\{\\s*deuda\\s*total\\s*\\}", "{DEUDA_TOTAL}");
+        t = t.replaceAll("(?i)\\{\\s*nombre\\s*completo\\s*\\}", "{NOMBRECOMPLETO}");
+        t = t.replaceAll("(?i)\\{\\s*num(?:ero)?\\s*cuenta\\s*pmcp\\s*\\}", "{NUMCUENTAPMCP}");
+
+        // combinadas (variantes de escritura)
+        t = t.replaceAll("(?i)\\{\\s*ltd\\s*[+_/\\-\\s]*\\s*ltde\\s*\\}", "{LTD_LTDE}");
+        t = t.replaceAll("(?i)\\{\\s*baja\\s*30\\s*[+_/\\-\\s]*\\s*saldo\\s*mora\\s*\\}", "{BAJA30_SALDOMORA}");
+
+        return t;
+    }
+
+    private void exportAppend(List<Map<String,Object>> baseRows,
+                              List<Map<String,Object>> extraRows,
+                              OutputStream out) throws IOException {
+        if (baseRows == null) baseRows = new ArrayList<>();
+        if (extraRows == null) extraRows = new ArrayList<>();
+
+        // Si no hay nada, error
+        if (baseRows.isEmpty() && extraRows.isEmpty()) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+                    "No hay filas para exportar."
+            );
+        }
+
+        // Unión de columnas
+        LinkedHashSet<String> headers = new LinkedHashSet<>();
+        // preferencia de orden: Celular, SMS, VARIABLE_USADA, VALOR_MENSAJE, luego lo demás
+        List<String> prefer = List.of("TELEFONOCELULAR","_SMS_","VARIABLE_USADA","VALOR_MENSAJE",
+                "NOMBRE","DOCUMENTO","BAJA30","SALDO_MORA","PKM","CAPITAL","DEUDA_TOTAL",
+                "LTD","LTDE","LTD_LTDE","BAJA30_SALDOMORA","NOMBRECOMPLETO","EMAIL","NUMCUENTAPMCP","DIASMORA");
+        for (String p : prefer) headers.add(p);
+        for (var r : baseRows)  headers.addAll(r.keySet());
+        for (var r : extraRows) headers.addAll(r.keySet());
+
+        try (var wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook()) {
+            var sh = wb.createSheet("Consulta");
+
+            // Encabezados visibles
+            var hRow = sh.createRow(0);
+            var headerStyle = wb.createCellStyle();
+            var font = wb.createFont(); font.setBold(true);
+            headerStyle.setFont(font);
+            int cIdx = 0;
+            for (String h : headers) {
+                var cell = hRow.createCell(cIdx++);
+                cell.setCellValue(prettyHeader(h));
+                cell.setCellStyle(headerStyle);
+            }
+
+            // Escribir base primero
+            int rIdx = 1;
+            for (var row : baseRows) {
+                var x = sh.createRow(rIdx++);
+                int ci = 0;
+                for (String h : headers) {
+                    var cell = x.createCell(ci++);
+                    writeCell(cell, row.get(h));
+                }
+            }
+            // Luego las extras del guiado
+            for (var row : extraRows) {
+                var x = sh.createRow(rIdx++);
+                int ci = 0;
+                for (String h : headers) {
+                    var cell = x.createCell(ci++);
+                    writeCell(cell, row.get(h));
+                }
+            }
+
+            // auto-size
+            int idx = 0;
+            for (String ignored : headers) sh.autoSizeColumn(idx++);
+
+            wb.write(out);
+            out.flush();
+        }
+    }
+
+
+    public void previewDownloadMerged(String sessionId, OutputStream out) throws IOException {
+        PreviewSession s = sessions.get(sessionId);
+        if (s == null) throw new IllegalStateException("Sesión no encontrada");
+        touch(s);
+
+        // 1) Base “normal” (exactamente como exportas hoy)
+        DynamicQueryRequest1 reqBase = new DynamicQueryRequest1(
+                s.originalQuery.selects(),
+                s.originalQuery.tramo(),
+                s.originalQuery.condiciones(),
+                s.originalQuery.restricciones(),
+                null,                        // sin límite
+                s.originalQuery.importeExtra(),
+                s.originalQuery.selectAll(),
+                s.originalQuery.template()
+        );
+        List<Map<String,Object>> baseRows = this.run(reqBase);
+        if (baseRows == null) baseRows = new ArrayList<>();
+
+        // Normaliza nombres bonitos igual que tu export normal
+        for (var row : baseRows) {
+            Object nc = row.get("NOMBRECOMPLETO");
+            if (nc != null) row.put("NOMBRECOMPLETO", capWords(nc.toString()));
+            Object n = row.get("NOMBRE");
+            if (n != null) row.put("NOMBRE", capWords(n.toString()));
+        }
+
+        // 2) Filas resueltas del guiado -> mismas columnas que ya armas en previewDownload
+        List<Map<String,Object>> extraRows = new ArrayList<>();
+        final String SMS_COL = "_SMS_";
+        String template = normalizeTemplateVars(Optional.ofNullable(s.template).orElse(""));
+
+        // espejo combinadas para que el SMS salga bien
+        boolean wantsLTD   = template.contains("{LTD}");
+        boolean wantsLTDE  = template.contains("{LTDE}");
+        boolean wantsBM    = template.contains("{BAJA30}");
+        boolean wantsMora  = template.contains("{SALDO_MORA}");
+        boolean wantsCombL = template.contains("{LTD_LTDE}");
+        boolean wantsCombB = template.contains("{BAJA30_SALDOMORA}");
+
+        for (RowState rs : s.rows) {
+            Map<String,Object> r = new LinkedHashMap<>(rs.working);
+            r.put("VARIABLE_USADA", rs.variableUsada == null ? "" : rs.variableUsada);
+            r.put("VALOR_MENSAJE",  rs.valorUsado == null ? 0  : rs.valorUsado);
+
+            // espejo combinadas <-> bases
+            Object combL = r.get("LTD_LTDE");
+            if (combL != null) {
+                if (wantsLTD  && r.get("LTD")  == null) r.put("LTD",  combL);
+                if (wantsLTDE && r.get("LTDE") == null) r.put("LTDE", combL);
+            }
+            Object combB = r.get("BAJA30_SALDOMORA");
+            if (combB != null) {
+                if (wantsBM   && r.get("BAJA30")     == null) r.put("BAJA30", combB);
+                if (wantsMora && r.get("SALDO_MORA") == null) r.put("SALDO_MORA", combB);
+            }
+            if (wantsCombL && r.get("LTD_LTDE") == null) {
+                Number ltde = (Number) r.get("LTDE");
+                Number ltd  = (Number) r.get("LTD");
+                Number chosen = (ltde != null && ltde.doubleValue() > 0) ? ltde : ltd;
+                if (chosen != null) r.put("LTD_LTDE", chosen);
+            }
+            if (wantsCombB && r.get("BAJA30_SALDOMORA") == null) {
+                Number b30  = (Number) r.get("BAJA30");
+                Number mo   = (Number) r.get("SALDO_MORA");
+                Number chosen = (b30 != null && b30.doubleValue() > 0) ? b30 : mo;
+                if (chosen != null) r.put("BAJA30_SALDOMORA", chosen);
+            }
+
+            String sms = SmsTextUtil.render(template, r);
+            r.put(SMS_COL, sms);
+
+            extraRows.add(r);
+        }
+
+        // 3) Merge: union de columnas y append de filas
+        exportAppend(baseRows, extraRows, out);
+    }
+
+
+
 }
