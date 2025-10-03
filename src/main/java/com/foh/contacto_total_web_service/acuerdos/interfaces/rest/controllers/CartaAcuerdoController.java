@@ -4,6 +4,7 @@ import com.foh.contacto_total_web_service.acuerdos.domain.model.command.CreateCa
 import com.foh.contacto_total_web_service.acuerdos.domain.model.queries.GetDatosByClienteQuery;
 import com.foh.contacto_total_web_service.acuerdos.domain.services.CartaAcuerdoCommandService;
 import com.foh.contacto_total_web_service.acuerdos.domain.services.CartaAcuerdoQueryService;
+import com.foh.contacto_total_web_service.acuerdos.infrastructure.persistence.jpa.repositories.CartaAcuerdoRepository;
 import com.foh.contacto_total_web_service.acuerdos.interfaces.rest.resources.CreateCartaAcuerdoResource;
 import com.foh.contacto_total_web_service.acuerdos.interfaces.rest.resources.DatosAcuerdoResource;
 import com.foh.contacto_total_web_service.acuerdos.interfaces.rest.transform.CreateCartaAcuerdoCommandFromResourceAssembler;
@@ -39,29 +40,44 @@ public class CartaAcuerdoController {
     @Autowired
     private CartaAcuerdoQueryService cartaAcuerdoQueryService;
 
+    @Autowired
+    private CartaAcuerdoRepository cartaAcuerdoRepository;
+
     @Operation(
             summary = "Obtener datos del cliente",
-            description = "Devuelve los datos de acuerdo de un cliente según su DNI y tramo, si existe un acuerdo válido."
+            description = "Devuelve los datos de acuerdo de un cliente según su DNI, si existe un acuerdo válido."
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Datos encontrados del cliente",
                     content = @Content(schema = @Schema(implementation = DatosAcuerdoResource.class))),
-            @ApiResponse(responseCode = "404", description = "No se encontraron datos para el cliente y tramo especificados",
+            @ApiResponse(responseCode = "404", description = "Cliente no encontrado en la base de datos",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseResource.class))),
+            @ApiResponse(responseCode = "422", description = "Cliente sin promesa de pago u oportunidad de pago",
                     content = @Content(schema = @Schema(implementation = ErrorResponseResource.class))),
             @ApiResponse(responseCode = "500", description = "Error interno del servidor",
                     content = @Content(schema = @Schema(implementation = ErrorResponseResource.class)))
     })
-    @GetMapping("/datos-cliente/{dni}/{tramo}")
-    public ResponseEntity<?> getDatosCliente(@PathVariable String dni, @PathVariable String tramo) {
+    @GetMapping("/datos-cliente/{dni}")
+    public ResponseEntity<?> getDatosCliente(@PathVariable String dni) {
         try {
-            var query = new GetDatosByClienteQuery(dni, tramo);
+            // Primero verificar si el cliente existe en la base de datos
+            boolean clienteExiste = cartaAcuerdoRepository.clienteExisteEnTempMerge(dni);
+
+            if (!clienteExiste) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(new ErrorResponseResource("Cliente no encontrado en la base de datos", "CLIENTE_NO_ENCONTRADO"));
+            }
+
+            // Si existe, buscar si tiene promesa de pago u oportunidad de pago
+            var query = new GetDatosByClienteQuery(dni);
             var datosClienteResource = cartaAcuerdoQueryService.handle(query);
 
             if (datosClienteResource.isPresent()) {
                 return ResponseEntity.ok(datosClienteResource.get());
             } else {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(new ErrorResponseResource("No se encontraron datos", "DATOS_NO_ENCONTRADOS"));
+                // El cliente existe pero no tiene promesa de pago u oportunidad de pago
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                        .body(new ErrorResponseResource("El cliente no tiene promesa de pago u oportunidad de pago registrada", "SIN_PROMESA_OPORTUNIDAD"));
             }
 
         } catch (Exception e) {

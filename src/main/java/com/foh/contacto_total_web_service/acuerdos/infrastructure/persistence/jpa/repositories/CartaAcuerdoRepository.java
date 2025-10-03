@@ -14,7 +14,23 @@ public class CartaAcuerdoRepository  {
     @PersistenceContext
     private EntityManager entityManager;
 
-    public Optional<DatosAcuerdoResource> findByDniAndTramo(String dni, String tramo) {
+    public boolean clienteExisteEnTempMerge(String dni) {
+        String jpql = "SELECT COUNT(TM.DOCUMENTO) FROM TEMP_MERGE AS TM WHERE TM.DOCUMENTO = ?1";
+
+        try {
+            Query query = entityManager.createNativeQuery(jpql)
+                    .setParameter(1, dni);
+
+            Object result = query.getSingleResult();
+            long count = ((Number) result).longValue();
+            return count > 0;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public Optional<DatosAcuerdoResource> findByDni(String dni) {
         String jpql = """
         SELECT
         	CURDATE() AS FechaActual,
@@ -26,18 +42,17 @@ public class CartaAcuerdoRepository  {
             TM.`5` AS LTD,
             TM.LTDESPECIAL AS LTDEspecial,
             GH.UsuarioRegistra AS Asesor,
-            GH.Observacion
+            GH.Observacion,
+            TM.RANGOMORAPROYAG AS Tramo
         FROM `foh-prd`.GESTION_HISTORICA AS GH
         INNER JOIN TEMP_MERGE AS TM ON GH.Documento = TM.DOCUMENTO
         WHERE GH.Resultado IN ('PROMESA DE PAGO', 'OPORTUNIDAD DE PAGO')
             AND GH.Documento = ?1
-            AND TM.RANGOMORAPROYAG = ?2
         """;
 
         try {
             Query query = entityManager.createNativeQuery(jpql)
-                    .setParameter(1, dni)
-                    .setParameter(2, tramo);
+                    .setParameter(1, dni);
 
             Object resultObj = query.getSingleResult();
 
@@ -54,14 +69,15 @@ public class CartaAcuerdoRepository  {
                     result[5] != null ? result[5].toString() : null, // saldoCapitalAsig
                     result[6] != null ? result[6].toString() : null, // ltd,
                     result[7] != null ? result[7].toString() : null, // ltde
-                    result[8].toString(), //asesor
-                    result[9] != null ? result[9].toString() : null  // observacion
+                    result[8].toString(), // asesor
+                    result[9] != null ? result[9].toString() : null, // observacion
+                    result[10].toString() // tramo
             );
 
             return Optional.of(resource);
 
         } catch (NoResultException e) {
-            System.out.println("No se encontraron resultados para DNI: " + dni + ", tramo: " + tramo);
+            System.out.println("No se encontraron resultados para DNI: " + dni);
             return Optional.empty();
         } catch (Exception e) {
             e.printStackTrace(); // imprime cualquier otro error

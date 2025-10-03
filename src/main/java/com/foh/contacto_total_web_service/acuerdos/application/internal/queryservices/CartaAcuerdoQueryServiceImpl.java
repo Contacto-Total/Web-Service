@@ -17,6 +17,6 @@ public class CartaAcuerdoQueryServiceImpl implements CartaAcuerdoQueryService {
 
     @Override
     public Optional<DatosAcuerdoResource> handle(GetDatosByClienteQuery query) {
-        return cartaAcuerdoRepository.findByDniAndTramo(query.dni(), query.tramo());
+        return cartaAcuerdoRepository.findByDni(query.dni());
     }
 }
