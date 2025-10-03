@@ -10,6 +10,7 @@ public record DatosAcuerdoResource(
     String ltd,
     String ltde,
     String asesor,
-    String observacion
+    String observacion,
+    String tramo
 ) {
 }
