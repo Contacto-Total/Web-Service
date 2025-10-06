@@ -36,9 +36,17 @@ public class RangoRepository {
             GetFiltersToGenerateFileRequest request,
             List<String> documentosPromesasCaidas
     ) {
+        System.out.println("========== INICIO RANGO REPOSITORY ==========");
+        System.out.println("FilterType recibido: " + request.getFilterType());
+        System.out.println("Campaign Name: " + request.getCampaignName());
+
         List<String> subconsultas = construirSubconsultas(request, documentosPromesasCaidas);
         String consultaFinal = construirConsultaPrincipal(subconsultas);
-        System.out.println("Consulta Final: " + consultaFinal);
+
+        System.out.println("========== CONSULTA FINAL RANGOS ==========");
+        System.out.println(consultaFinal);
+        System.out.println("========== FIN CONSULTA RANGOS ==========");
+
         Query query = entityManager.createNativeQuery(consultaFinal);
         return query.getResultList();
     }
@@ -55,13 +63,16 @@ public class RangoRepository {
         String condicionFechas = construirCondicionFechas(request.getDueDates());
         String condicionContenido = construirCondicionContenido(request.getCampaignName(), request.getContent());
 
+        String columnaFiltro = obtenerColumnaFiltro(request.getFilterType());
+        System.out.println("Columna de filtro seleccionada: " + columnaFiltro);
+
         // Subconsulta para contacto directo
         if (tieneElementos(request.getDirectContactRanges())) {
             String subconsulta = construirSubconsulta(
                     1, // bloque
                     request.getDirectContactRanges(),
                     CONTACTO_DIRECTO,
-                    SALDO_ACTUAL_CONSUMO,
+                    columnaFiltro,
                     "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')",
                     rangoMoraProyectado,
                     condicionFechas,
@@ -76,7 +87,7 @@ public class RangoRepository {
                     2, // bloque
                     request.getIndirectContactRanges(),
                     CONTACTO_INDIRECTO,
-                    SALDO_ACTUAL_CONSUMO,
+                    columnaFiltro,
                     "TIPI IN ('CONTACTO CON TERCEROS')",
                     rangoMoraProyectado,
                     condicionFechas,
@@ -88,12 +99,13 @@ public class RangoRepository {
         // Subconsulta para promesas rotas
         if (tieneElementos(request.getBrokenPromisesRanges())) {
             String condicionPromesas = construirCondicionPromesasRotas(documentosPromesasCaidas);
-            String condicionesExtra = construirCondicionesPromesasRotas(condicionPromesas);
+            String condicionPagadasHoy = construirCondicionPagadasHoy(request.getExcluirPagadasHoy());
+            String condicionesExtra = construirCondicionesPromesasRotas(condicionPromesas, condicionPagadasHoy);
             String subconsulta = construirSubconsulta(
                     3, // bloque
                     request.getBrokenPromisesRanges(),
                     PROMESA_ROTA,
-                    SALDO_CAPITAL_ASIGNADO,
+                    columnaFiltro,
                     condicionesExtra,
                     rangoMoraProyectado,
                     condicionFechas,
@@ -111,7 +123,7 @@ public class RangoRepository {
                     4, // bloque
                     request.getNotContactedRanges(),
                     NO_CONTACTADO,
-                    SALDO_CAPITAL_ASIGNADO,
+                    columnaFiltro,
                     condicionesNoContactado,
                     rangoMoraProyectado,
                     condicionFechas,
@@ -187,7 +199,7 @@ public class RangoRepository {
     /**
      * Construye las condiciones específicas para promesas rotas
      */
-    private String construirCondicionesPromesasRotas(String condicionDocumentos) {
+    private String construirCondicionesPromesasRotas(String condicionDocumentos, String condicionPagadasHoy) {
         String tiposPromesa = "TIPI IN ('PROMESA DE PAGO', 'OPORTUNIDAD DE PAGO', " +
                 "'RECORDATORIO DE PAGO', 'CONFIRMACION DE ABONO', 'CANCELACION PARCIAL', " +
                 "'CANCELACION TOTAL', 'CANCELACION NO REPORTADAS O APLICADAS')";
@@ -197,7 +209,18 @@ public class RangoRepository {
         } else {
             condicionFinal += " AND documento IN (" + condicionDocumentos + ")";
         }
+        condicionFinal += condicionPagadasHoy;
         return condicionFinal;
+    }
+
+    /**
+     * Construye la condición para excluir documentos con estado 'Pagada' en PROMESAS_HISTORICO
+     */
+    private String construirCondicionPagadasHoy(Boolean excluirPagadasHoy) {
+        if (excluirPagadasHoy == null || !excluirPagadasHoy) {
+            return "";
+        }
+        return " AND documento NOT IN (SELECT DISTINCT documento FROM PROMESAS_HISTORICO WHERE Estado = 'Pagada')";
     }
 
     /**
@@ -257,5 +280,29 @@ public class RangoRepository {
      */
     private boolean tieneElementos(List<?> lista) {
         return lista != null && !lista.isEmpty();
+    }
+
+    /**
+     * Obtiene la columna a usar para el filtro según el tipo seleccionado
+     * @param filterType Tipo de filtro: "saldoCapital", "baja30", "baja60", "baja90"
+     * @return Nombre de la columna en la base de datos
+     */
+    private String obtenerColumnaFiltro(String filterType) {
+        if (filterType == null || filterType.trim().isEmpty()) {
+            return SALDO_CAPITAL_ASIGNADO; // Por defecto
+        }
+
+        switch (filterType.trim().toLowerCase()) {
+            case "saldocapital":
+                return SALDO_CAPITAL_ASIGNADO;
+            case "baja30":
+                return "`2`"; // Columna para baja 30 (escapada con backticks)
+            case "baja60":
+                return "`3`"; // Columna para baja 60 (escapada con backticks)
+            case "baja90":
+                return "`4`"; // Columna para baja 90 (escapada con backticks)
+            default:
+                return SALDO_CAPITAL_ASIGNADO;
+        }
     }
 }
