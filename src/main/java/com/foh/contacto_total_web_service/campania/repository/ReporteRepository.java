@@ -40,6 +40,10 @@ public class ReporteRepository {
             GetFiltersToGenerateFileRequest request,
             List<String> documentosPromesasCaidas
     ) {
+        System.out.println("========== INICIO REPORTE REPOSITORY ==========");
+        System.out.println("FilterType recibido: " + request.getFilterType());
+        System.out.println("Campaign Name: " + request.getCampaignName());
+
         StringBuilder constructorConsulta = new StringBuilder();
         constructorConsulta.append("SELECT RANGO, COUNT(1) FROM (");
 
@@ -56,7 +60,10 @@ public class ReporteRepository {
         // Finalizar la consulta con GROUP BY y ORDER BY
         finalizarConsulta(constructorConsulta);
 
-        System.out.println("Consulta Final Reporte: " + constructorConsulta.toString());
+        System.out.println("========== CONSULTA FINAL REPORTE ==========");
+        System.out.println(constructorConsulta.toString());
+        System.out.println("========== FIN CONSULTA REPORTE ==========");
+
         Query query = entityManager.createNativeQuery(constructorConsulta.toString());
         return query.getResultList();
     }
@@ -79,16 +86,19 @@ public class ReporteRepository {
             constructorConsulta.append(" UNION ALL ");
         }
 
+        String columnaFiltro = obtenerColumnaFiltro(request.getFilterType());
+        System.out.println("Columna filtro CD: " + columnaFiltro);
+
         String condicionesRango = RangoConditionBuilder.buildRangoConditions(
                 request.getDirectContactRanges(),
                 RANGO_CONTACTO_DIRECTO,
-                SALDO_ACTUAL_CONSUMO
+                columnaFiltro
         );
 
         String subconsulta = construirSubconsultaBase(
                 condicionesRango,
                 TIPO_CONTACTO_DIRECTO,
-                SALDO_ACTUAL_CONSUMO,
+                columnaFiltro,
                 "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')",
                 "",
                 request.getCampaignName(),
@@ -118,16 +128,18 @@ public class ReporteRepository {
             constructorConsulta.append(" UNION ALL ");
         }
 
+        String columnaFiltro = obtenerColumnaFiltro(request.getFilterType());
+
         String condicionesRango = RangoConditionBuilder.buildRangoConditions(
                 request.getIndirectContactRanges(),
                 RANGO_CONTACTO_INDIRECTO,
-                SALDO_ACTUAL_CONSUMO
+                columnaFiltro
         );
 
         String subconsulta = construirSubconsultaBase(
                 condicionesRango,
                 TIPO_CONTACTO_INDIRECTO,
-                SALDO_ACTUAL_CONSUMO,
+                columnaFiltro,
                 "TIPI IN ('CONTACTO CON TERCEROS')",
                 "",
                 request.getCampaignName(),
@@ -158,21 +170,24 @@ public class ReporteRepository {
             constructorConsulta.append(" UNION ALL ");
         }
 
+        String columnaFiltro = obtenerColumnaFiltro(request.getFilterType());
+
         String condicionesRango = RangoConditionBuilder.buildRangoConditions(
                 request.getBrokenPromisesRanges(),
                 RANGO_PROMESA_ROTA,
-                SALDO_CAPITAL_ASIGNADO
+                columnaFiltro
         );
 
         String condicionesTipoContacto = construirCondicionesTipoPromesa();
         String condicionDocumentos = construirCondicionDocumentosPromesas(documentosPromesasCaidas);
+        String condicionPagadasHoy = construirCondicionPagadasHoy(request.getExcluirPagadasHoy());
 
         String subconsulta = construirSubconsultaBase(
                 condicionesRango,
                 TIPO_PROMESA_ROTA,
-                SALDO_CAPITAL_ASIGNADO,
+                columnaFiltro,
                 condicionesTipoContacto,
-                condicionDocumentos,
+                condicionDocumentos + condicionPagadasHoy,
                 request.getCampaignName(),
                 condicionFechas,
                 condicionContenido
@@ -200,10 +215,12 @@ public class ReporteRepository {
             constructorConsulta.append(" UNION ALL ");
         }
 
+        String columnaFiltro = obtenerColumnaFiltro(request.getFilterType());
+
         String condicionesRango = RangoConditionBuilder.buildRangoConditions(
                 request.getNotContactedRanges(),
                 RANGO_NO_CONTACTADO,
-                SALDO_CAPITAL_ASIGNADO
+                columnaFiltro
         );
 
         String condicionesNoContactado =
@@ -212,6 +229,7 @@ public class ReporteRepository {
 
         String subconsulta = construirSubconsultaNoContactados(
                 condicionesRango,
+                columnaFiltro,
                 condicionesNoContactado,
                 request.getCampaignName(),
                 condicionFechas,
@@ -278,6 +296,7 @@ public class ReporteRepository {
      */
     private String construirSubconsultaNoContactados(
             String condicionesRango,
+            String columnaFiltro,
             String condicionesNoContactado,
             String rangoMoraProyectado,
             String condicionFechas,
@@ -306,7 +325,7 @@ public class ReporteRepository {
 
         subconsulta.append(" ORDER BY SLDCAPCONS DESC) b ")
                 .append("WHERE b.rango IS NOT NULL ")
-                .append("AND CAST(").append(SALDO_ACTUAL_CONSUMO).append(" AS DECIMAL(10, 2)) > 0 ")
+                .append("AND CAST(").append(columnaFiltro).append(" AS DECIMAL(10, 2)) > 0 ")
                 .append("AND ").append(condicionesNoContactado);
 
         return subconsulta.toString();
@@ -401,6 +420,40 @@ public class ReporteRepository {
      */
     private boolean tieneElementos(List<?> lista) {
         return lista != null && !lista.isEmpty();
+    }
+
+    /**
+     * Obtiene la columna a usar para el filtro según el tipo seleccionado
+     * @param filterType Tipo de filtro: "saldoCapital", "baja30", "baja60", "baja90"
+     * @return Nombre de la columna en la base de datos
+     */
+    private String obtenerColumnaFiltro(String filterType) {
+        if (filterType == null || filterType.trim().isEmpty()) {
+            return SALDO_CAPITAL_ASIGNADO; // Por defecto
+        }
+
+        switch (filterType.trim().toLowerCase()) {
+            case "saldocapital":
+                return SALDO_CAPITAL_ASIGNADO;
+            case "baja30":
+                return "`2`"; // Columna para baja 30 (escapada con backticks)
+            case "baja60":
+                return "`3`"; // Columna para baja 60 (escapada con backticks)
+            case "baja90":
+                return "`4`"; // Columna para baja 90 (escapada con backticks)
+            default:
+                return SALDO_CAPITAL_ASIGNADO;
+        }
+    }
+
+    /**
+     * Construye la condición para excluir documentos con estado 'Pagada' en PROMESAS_HISTORICO
+     */
+    private String construirCondicionPagadasHoy(Boolean excluirPagadasHoy) {
+        if (excluirPagadasHoy == null || !excluirPagadasHoy) {
+            return "";
+        }
+        return " AND documento NOT IN (SELECT DISTINCT documento FROM PROMESAS_HISTORICO WHERE Estado = 'Pagada')";
     }
 
     public List<String> getFechasDeVencimientoDisponibles() {
