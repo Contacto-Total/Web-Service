@@ -48,6 +48,8 @@ public class CartaAcuerdoRepository  {
         INNER JOIN TEMP_MERGE AS TM ON GH.Documento = TM.DOCUMENTO
         WHERE GH.Resultado IN ('PROMESA DE PAGO', 'OPORTUNIDAD DE PAGO')
             AND GH.Documento = ?1
+        ORDER BY GH.FechaCompromiso DESC
+        LIMIT 1
         """;
 
         try {
