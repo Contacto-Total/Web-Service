@@ -36,7 +36,11 @@ public class CartaAcuerdoRepository  {
         	CURDATE() AS FechaActual,
             GH.Cliente AS NombreDelTitular,
             TM.NUMCUENTAPMCP AS NroCuentaTarjetaOh,
-            GH.FechaCompromiso,
+            CASE
+                WHEN GH.Resultado = 'PROMESA DE PAGO' THEN GH.FechaCompromiso
+                WHEN GH.Resultado = 'OPORTUNIDAD DE PAGO' THEN GH.FechaOportunidad
+                ELSE NULL
+            END AS FechaCompromisoOuOportunidad,
             GH.DeudaTotal AS DeudaTotal,
             TM.SLDCAPITALASIG AS SaldoCapitalAsig,
             TM.`5` AS LTD,
