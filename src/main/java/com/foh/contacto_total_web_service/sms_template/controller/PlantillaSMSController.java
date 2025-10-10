@@ -216,7 +216,7 @@ public class PlantillaSMSController {
     @GetMapping("/preview/{sessionId}/download-base")
     public void previewDownloadBase(@PathVariable String sessionId, HttpServletResponse resp) throws IOException {
         resp.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        resp.setHeader("Content-Disposition", "attachment; filename=\"sms_report.xlsx\"");
+        resp.setHeader("Content-Disposition", "attachment; filename=\"SMS.xlsx\"");
         dynamicQueryService.previewDownloadBase(sessionId, resp.getOutputStream());
         resp.flushBuffer(); // opcional, para empujar el stream
     }

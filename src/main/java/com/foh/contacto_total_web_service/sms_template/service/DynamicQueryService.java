@@ -541,7 +541,7 @@ public class DynamicQueryService {
 
 
     public void exportToExcel(DynamicQueryRequest1 req, OutputStream out) throws IOException {
-
+        log.info(">>> HEADERS exportResolved: {}");
         // === Export: solo las columnas seleccionadas por el usuario?
         // Pon en true para ACTIVAR; false para dejar TODO como ahora.
         final boolean EXPORT_ONLY_SELECTED = true;
@@ -714,42 +714,34 @@ public class DynamicQueryService {
                 headers = new ArrayList<>(keep);
             }
 
-            // 4) Encabezados visibles (bonitos)
+            // ==== ENCABEZADOS TIPO: Celular | VAR1 | VAR2 | ... ====
             var headerStyle = wb.createCellStyle();
             var font = wb.createFont(); font.setBold(true);
             headerStyle.setFont(font);
 
-            List<String> display = new ArrayList<>(headers.size());
-            for (String col : headers) display.add(prettyHeader(col));
+
+            // "headers" ya está ordenado con Celular al inicio y SMS en 2do lugar (si existe)
+            List<String> headerList = new ArrayList<>(headers);
+
+            // si existe _SMS_, VAR1 = SMS y el contador arranca en 2
+            boolean hasSms = headerList.stream()
+                    .anyMatch(x -> "_SMS_".equals(x) || "SMS".equalsIgnoreCase(x));
+            int varCounter = hasSms ? 2 : 1;
 
             var hRow = sh.createRow(0);
-            for (int c = 0; c < display.size(); c++) {
-                var cell = hRow.createCell(c);
-                cell.setCellValue(display.get(c));
-                cell.setCellStyle(headerStyle);
-            }
-
-            /* para mostrar con Var1...
-            List<String> display = new ArrayList<>();
-            for (int i = 0; i < headers.size(); i++) {
-                String col = headers.get(i);
-                if (i == 0) {
-                    display.add("Celular");
-                } else if ("DOCUMENTO".equalsIgnoreCase(col)) {
-                    display.add("DOCUMENTO");
-                } else if (SMS_COL.equals(col)) {
-                    display.add("VAR1");                  // <- El SMS se llama VAR1
+            for (int i = 0; i < headerList.size(); i++) {
+                String h = headerList.get(i);
+                var cell = hRow.createCell(i);
+                String hUp = h == null ? "" : h.toUpperCase(Locale.ROOT);
+                if ("TELEFONOCELULAR".equals(hUp)) {
+                    cell.setCellValue("Celular");
+                } else if ("_SMS_".equals(h) || "SMS".equals(hUp)) { // ← acepta ambas variantes
+                    cell.setCellValue("VAR1");
                 } else {
-                    display.add("VAR" + i);               // VAR2, VAR3, ...
+                    cell.setCellValue("VAR" + (varCounter++));
                 }
-            }
-
-            var hRow = sh.createRow(0);
-            for (int c = 0; c < display.size(); c++) {
-                var cell = hRow.createCell(c);
-                cell.setCellValue(display.get(c));
                 cell.setCellStyle(headerStyle);
-            }*/
+            }
 
             // 5) Escribir filas con los headers definidos
             int r = 1;
@@ -1475,6 +1467,7 @@ public class DynamicQueryService {
 
     // Exportador para lista ya resuelta
     private void exportResolved(List<Map<String,Object>> rows, OutputStream out) throws IOException {
+        log.info(">>> HEADERS exportResolved: {}");
         if (rows == null) rows = new ArrayList<>();
         if (rows.isEmpty()) {
             throw new org.springframework.web.server.ResponseStatusException(
@@ -1495,17 +1488,35 @@ public class DynamicQueryService {
             // añade los demás presentes
             for (var r : rows) headers.addAll(r.keySet());
 
+
+            List<String> headerList = new ArrayList<>(headers);
+
+            // si existe _SMS_, VAR1 = SMS y el contador arranca en 2
+            boolean hasSms = headerList.stream()
+                    .anyMatch(x -> "_SMS_".equals(x) || "SMS".equalsIgnoreCase(x));
+            int varCounter = hasSms ? 2 : 1;
+
+            // estilo
             var hRow = sh.createRow(0);
             var headerStyle = wb.createCellStyle();
             var font = wb.createFont(); font.setBold(true);
             headerStyle.setFont(font);
 
-            int cIdx = 0;
-            for (String h : headers) {
-                var cell = hRow.createCell(cIdx++);
-                cell.setCellValue(prettyHeader(h));
+            // etiquetas visibles
+            for (int i = 0; i < headerList.size(); i++) {
+                String h = headerList.get(i);
+                var cell = hRow.createCell(i);
+                if ("TELEFONOCELULAR".equalsIgnoreCase(h)) {
+                    cell.setCellValue("Celular");
+                } else if ("_SMS_".equals(h)) {
+                    cell.setCellValue("VAR1");
+                } else {
+                    cell.setCellValue("VAR" + (varCounter++));
+                }
                 cell.setCellStyle(headerStyle);
             }
+
+
 
             int rIdx = 1;
             for (var row : rows) {
@@ -1576,11 +1587,6 @@ public class DynamicQueryService {
             var font = wb.createFont(); font.setBold(true);
             headerStyle.setFont(font);
             int cIdx = 0;
-            for (String h : headers) {
-                var cell = hRow.createCell(cIdx++);
-                cell.setCellValue(prettyHeader(h));
-                cell.setCellStyle(headerStyle);
-            }
 
             // Escribir base primero
             int rIdx = 1;
@@ -1732,18 +1738,39 @@ public class DynamicQueryService {
         try (var wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook()) {
             var sh = wb.createSheet("Consulta");
 
-            // Encabezados visibles (bonitos)
+            // Encabezados: Celular, VAR1 (si hay _SMS_), luego VAR2, VAR3...
             var hRow = sh.createRow(0);
             var headerStyle = wb.createCellStyle();
             var font = wb.createFont(); font.setBold(true);
             headerStyle.setFont(font);
 
-            int cIdx = 0;
-            for (String h : headers) {
-                var cell = hRow.createCell(cIdx++);
-                cell.setCellValue(prettyHeader(h));
+// "headers" es un LinkedHashSet: conviértelo a lista para indexar
+            List<String> headerList = new ArrayList<>(headers);
+
+// si existe _SMS_, entonces VAR1 = SMS y el contador de VAR arranca en 2
+            boolean hasSms = headerList.stream()
+                    .anyMatch(x -> "_SMS_".equals(x) || "SMS".equalsIgnoreCase(x));
+            int varCounter = hasSms ? 2 : 1;
+
+// construimos los labels visibles
+            List<String> display = new ArrayList<>(headerList.size());
+            for (String h : headerList) {
+                if ("TELEFONOCELULAR".equalsIgnoreCase(h)) {
+                    display.add("Celular");
+                } else if ("_SMS_".equals(h)) {
+                    display.add("VAR1");
+                } else {
+                    display.add("VAR" + (varCounter++));
+                }
+            }
+
+        // escribe la fila de encabezados con los labels calculados
+            for (int c = 0; c < display.size(); c++) {
+                var cell = hRow.createCell(c);
+                cell.setCellValue(display.get(c));
                 cell.setCellStyle(headerStyle);
             }
+
 
             // Asegura que las filas base tengan SMS (como en el normal)
             for (var row : baseRows) {
