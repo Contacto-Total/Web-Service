@@ -191,6 +191,9 @@ public class DynamicQueryService {
         List<String> where = new ArrayList<>();
         where.add(VALIDACIONES_TODOS);
 
+        // ⬇️ agrega esta línea aquí (justo después de empezar a armar el WHERE)
+        Map<String,Object> params = new LinkedHashMap<>();
+
         // 3.1) Tramo obligatorio
         String tramo = Optional.ofNullable(req.tramo()).orElse("").trim();
         if (tramo.equals("3")) where.add("tm.RANGOMORAPROYAG = 'Tramo 3'");
@@ -211,10 +214,17 @@ public class DynamicQueryService {
         boolean wantsPKM = normalizeTemplateVars(Optional.ofNullable(req.template()).orElse("")).contains("{PKM}");
         boolean selPKM = selectsSet.contains("PKM") || wantsPKM || Boolean.TRUE.equals(req.selectAll());
 
-        // Join PKM solo si se requiere (¡esto sí debe ocurrir aunque no filtremos!)
-        if (selPKM) {
+        // ¿Algún filtro de rango menciona PKM?
+        boolean filterNeedsPKM = Optional.ofNullable(req.rangos()).orElse(List.of()).stream()
+                .anyMatch(rf -> rf != null && "PKM".equalsIgnoreCase(rf.field()));
+
+        boolean needPKMJoin = selPKM || filterNeedsPKM;
+
+        // Join PKM solo si se requiere (por select, template o filtro)
+        if (needPKMJoin) {
             from += " LEFT JOIN FOH_TRAMO3_PKM pkm ON pkm.IDENTITY_CODE = tm.IDENTITY_CODE ";
         }
+
 
         // === LTD/LTDE dinámicos con importeExtra (en SELECT) ===
         if (selectsSet.contains("LTD")) {
@@ -365,6 +375,27 @@ public class DynamicQueryService {
         if (r.excluirCompromisos())           where.add("tm.DOCUMENTO NOT IN (SELECT DOCUMENTO FROM COMPROMISOS)");
         if (r.excluirBlacklist())             where.add("tm.DOCUMENTO NOT IN (SELECT DOCUMENTO FROM blacklist)");
 
+        // === Rangos del frontend (cada tarjeta es [>= min] y/o [<= max]; todo se combina con AND) ===
+        List<com.foh.contacto_total_web_service.sms_template.dto.RangeFilter> rangos =
+                Optional.ofNullable(req.rangos()).orElse(List.of());
+
+        int rfIdx = 1;
+        for (var rf : rangos) {
+            if (rf == null) continue;
+
+            Double min = rf.min(), max = rf.max();
+            if (min != null && max != null && min > max) {
+                throw new IllegalArgumentException("El mínimo no puede ser mayor que el máximo para " + rf.field());
+            }
+
+            Pred p = buildRangePredicate(rf.field(), min, max, rf.inclusiveMin(), rf.inclusiveMax(), rfIdx++);
+            if (p != null) {
+                where.add(p.sql);        // se agrega con AND al resto
+                params.putAll(p.params); // añade parámetros nombrados
+            }
+        }
+
+
         // 4) Compose SQL (sin limit si viene null)
         Integer limit = Optional.ofNullable(req.limit()).orElse(null);
 
@@ -372,9 +403,7 @@ public class DynamicQueryService {
                 " WHERE " + String.join("\n AND ", where) +
                 (limit != null ? " LIMIT :limit" : "");
 
-        Map<String,Object> params = (limit != null)
-                ? Map.of("limit", limit)
-                : Collections.emptyMap();
+        if (limit != null) params.put("limit", limit);
 
         // (logs debug iguales a los tuyos si quieres mantenerlos)
         // ---- LOG de la consulta final ----
@@ -418,6 +447,55 @@ public class DynamicQueryService {
         // por defecto muestra el alias tal cual (LTD, LTDE, BAJA30, SALDO_MORA, PKM, DEUDA_TOTAL, BAJA30_SALDOMORA, etc.)
         return col;
     }
+
+    // === Campos filtrables por rango (expresión base, no alias de SELECT) ===
+    private static final Map<String,String> FILTERS = Map.ofEntries(
+            Map.entry("DEUDA_TOTAL", "CAST(tm.SLDACTUALCONS AS DECIMAL(18,2))"),
+            Map.entry("CAPITAL",     "CAST(tm.SLDCAPCONS   AS DECIMAL(18,2))"),
+            Map.entry("SALDO_MORA",  "CAST(tm.SLDMORA      AS DECIMAL(18,2))"),
+            Map.entry("BAJA30",      "CAST(NULLIF(TRIM(tm.`2`), '') AS DECIMAL(18,2))"),
+            Map.entry("LTD",         "CAST(NULLIF(TRIM(tm.`5`), '') AS DECIMAL(18,2))"),
+            Map.entry("LTDE",        "CAST(NULLIF(TRIM(tm.LTDESPECIAL), '') AS DECIMAL(18,2))"),
+            Map.entry("PKM",         "CAST(NULLIF(TRIM(pkm.PKM), '') AS DECIMAL(18,2))"),
+            Map.entry("DIASMORA",    "tm.DIASMORA")
+    );
+
+    private static final class Pred {
+        final String sql;
+        final Map<String, Object> params;
+        Pred(String sql, Map<String, Object> params) { this.sql = sql; this.params = params; }
+    }
+
+    private Pred buildRangePredicate(String fieldRaw, Double min, Double max, boolean inclusiveMin, boolean inclusiveMax, int idx) {
+        if (fieldRaw == null || fieldRaw.isBlank()) {
+            throw new IllegalArgumentException("Campo de rango vacío.");
+        }
+        String field = fieldRaw.trim().toUpperCase(java.util.Locale.ROOT);
+        String expr = FILTERS.get(field);
+        if (expr == null) {
+            throw new IllegalArgumentException("Campo no filtrable: " + field);
+        }
+
+        Map<String,Object> params = new LinkedHashMap<>();
+        List<String> parts = new ArrayList<>();
+
+        if (min != null) {
+            String p = "rf" + idx + "_min";
+            parts.add(expr + (inclusiveMin ? " >= :" : " > :") + p);
+            params.put(p, min);
+        }
+        if (max != null) {
+            String p = "rf" + idx + "_max";
+            parts.add(expr + (inclusiveMax ? " <= :" : " < :") + p);
+            params.put(p, max);
+        }
+
+        if (parts.isEmpty()) return null; // no min/max -> no filtra
+        return new Pred("(" + String.join(" AND ", parts) + ")", params);
+    }
+
+
+
     // Supervisores
     private record Supervisors(String phone, String name, String email, String NOMBRECOMPLETO, String NUMCUENTAPMCP) {}
     private static final List<Supervisors> SUPERVISORES = List.of(
@@ -477,7 +555,8 @@ public class DynamicQueryService {
                 null,
                 req.importeExtra(),
                 req.selectAll(),
-                req.template()
+                req.template(),
+                req.rangos()
         );
         List<Map<String,Object>> rows = this.run(reqAll);
         if (rows == null) rows = new ArrayList<>();
@@ -1115,7 +1194,8 @@ public class DynamicQueryService {
                 null,                       // sin límite
                 q.importeExtra(),
                 q.selectAll(),
-                q.template()
+                q.template(),
+                q.rangos()
         );
 
 
@@ -1546,7 +1626,8 @@ public class DynamicQueryService {
                 null,                        // sin límite
                 s.originalQuery.importeExtra(),
                 s.originalQuery.selectAll(),
-                s.originalQuery.template()
+                s.originalQuery.template(),
+                s.originalQuery.rangos()
         );
         List<Map<String,Object>> baseRows = this.run(reqBase);
         if (baseRows == null) baseRows = new ArrayList<>();
@@ -1714,7 +1795,8 @@ public class DynamicQueryService {
                 null,                        // sin límite
                 s.originalQuery.importeExtra(),
                 s.originalQuery.selectAll(),
-                s.originalQuery.template()
+                s.originalQuery.template(),
+                s.originalQuery.rangos()
         );
 
         exportToExcel(reqBase, out);  // ← tu export normal

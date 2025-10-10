@@ -5,6 +5,14 @@ import java.util.Set;
 
 public class CombosDTO {
 
+    public record RangeFilter(
+            String field,
+            Double min,
+            Double max,
+            Boolean inclusiveMin,
+            Boolean inclusiveMax
+    ) {}
+
     public static class CreateRequest {
         public String name;
         public String descripcion;
@@ -15,6 +23,7 @@ public class CombosDTO {
         public String tramo;
         public Set<String> condiciones;
         public Restricciones restricciones;
+        public List<RangeFilter> rangos;
     }
 
 
@@ -30,6 +39,7 @@ public class CombosDTO {
         public Set<String> condiciones;
         public Restricciones restricciones;
         public Boolean isActive;
+        public List<RangeFilter> rangos;
     }
 
     public static class Response {
@@ -45,5 +55,6 @@ public class CombosDTO {
         public Boolean isActive;
         public java.sql.Timestamp createdAt;
         public java.sql.Timestamp updatedAt;
+        public List<RangeFilter> rangos;
     }
 }

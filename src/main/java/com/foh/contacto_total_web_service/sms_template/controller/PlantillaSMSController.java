@@ -158,7 +158,8 @@ public class PlantillaSMSController {
                 null,                 // limit = null para evaluar todo
                 body.query.importeExtra(),
                 body.query.selectAll(),
-                body.query.template()
+                body.query.template(),
+                body.query.rangos()
         );
 
         List<java.util.Map<String,Object>> rows = dynamicQueryService.run(q);

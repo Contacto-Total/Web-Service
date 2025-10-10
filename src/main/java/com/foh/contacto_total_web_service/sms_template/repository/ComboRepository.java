@@ -70,6 +70,7 @@ public class ComboRepository {
             r.isActive = rs.getBoolean("is_active");
             r.createdAt = rs.getTimestamp("created_at");
             r.updatedAt = rs.getTimestamp("updated_at");
+            r.rangos = readRanges(rs.getString("rangos_json"));
             return r;
         } catch (Exception e) {
             throw new RuntimeException("Error mapeando TEST_SMS_TEMPLATE_COMBO", e);
@@ -123,9 +124,9 @@ public class ComboRepository {
 
         String sql = """
         INSERT INTO TEST_SMS_TEMPLATE_COMBO
-          (name, descripcion, plantilla_sms_id, selects_json, tramo, condiciones_json, restricciones_json, is_active)
+          (name, descripcion, plantilla_sms_id, selects_json, tramo, condiciones_json, restricciones_json, rangos_json, is_active)
         VALUES
-          (:name, :descripcion, :plantillaSmsId, :selectsJson, :tramo, :condJson, :restrJson, 1)
+          (:name, :descripcion, :plantillaSmsId, :selectsJson, :tramo, :condJson, :restrJson, :rangosJson, 1)
     """;
         var params = new MapSqlParameterSource()
                 .addValue("name", req.name)
@@ -134,7 +135,8 @@ public class ComboRepository {
                 .addValue("selectsJson", toJson(req.selects == null ? List.of() : req.selects))
                 .addValue("tramo", req.tramo)
                 .addValue("condJson", toJson(req.condiciones == null ? Set.of() : req.condiciones))
-                .addValue("restrJson", toJson(req.restricciones == null ? new Restricciones(false,false,false, false) : req.restricciones));
+                .addValue("restrJson", toJson(req.restricciones == null ? new Restricciones(false,false,false, false) : req.restricciones))
+                .addValue("rangosJson", toJson(req.rangos == null ? List.of() : req.rangos));
 
         jdbc.update(sql, params);
         return jdbc.getJdbcOperations().queryForObject("SELECT LAST_INSERT_ID()", Integer.class);
@@ -150,6 +152,7 @@ public class ComboRepository {
           tramo             = :tramo,
           condiciones_json  = :condJson,
           restricciones_json= :restrJson,
+          rangos_json       = :rangosJson,   -- 👈 NUEVO
           is_active         = :isActive
         WHERE id = :id
         """;
@@ -164,6 +167,7 @@ public class ComboRepository {
                 .addValue("tramo", req.tramo)
                 .addValue("condJson", toJson(req.condiciones == null ? Set.of() : req.condiciones))
                 .addValue("restrJson", toJson(req.restricciones == null ? new Restricciones(false,false,false, false) : req.restricciones))
+                .addValue("rangosJson", toJson(req.rangos == null ? List.of() : req.rangos))
                 .addValue("isActive", req.isActive == null ? Boolean.TRUE : req.isActive);
 
         return jdbc.update(sql, params);
@@ -187,6 +191,15 @@ public class ComboRepository {
         return list.isEmpty() ? Optional.empty() : Optional.ofNullable(list.get(0));
     }
 
+
+    private List<CombosDTO.RangeFilter> readRanges(String json) {
+        try {
+            if (json == null || json.isEmpty()) return List.of();
+            return om.readValue(json, new TypeReference<List<CombosDTO.RangeFilter>>() {});
+        } catch (Exception e) {
+            throw new RuntimeException("Error parseando rangos_json: " + json, e);
+        }
+    }
 
 
     public int updatePlantilla(Integer id, String name, String template) {

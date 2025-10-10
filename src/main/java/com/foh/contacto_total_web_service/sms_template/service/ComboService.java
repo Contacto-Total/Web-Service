@@ -1,11 +1,8 @@
 package com.foh.contacto_total_web_service.sms_template.service;
 
 import com.foh.contacto_total_web_service.plantillaSMS.service.PlantillaSMSService;
-import com.foh.contacto_total_web_service.sms_template.dto.SmsPrecheckDTO;
+import com.foh.contacto_total_web_service.sms_template.dto.*;
 import com.foh.contacto_total_web_service.sms_template.repository.ComboRepository;
-import com.foh.contacto_total_web_service.sms_template.dto.CombosDTO;
-import com.foh.contacto_total_web_service.sms_template.dto.DynamicQueryRequest1;
-import com.foh.contacto_total_web_service.sms_template.dto.Restricciones;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.stereotype.Service;
@@ -104,6 +101,22 @@ public class ComboService {
         dynamicService.exportToExcel(req, out);
     }
 
+    private List<RangeFilter> toDynRanges(List<CombosDTO.RangeFilter> in) {
+        if (in == null) return List.of();
+        List<RangeFilter> out = new ArrayList<>();
+        for (var rf : in) {
+            if (rf == null) continue;
+            out.add(new RangeFilter(
+                    rf.field(),
+                    rf.min(),
+                    rf.max(),
+                    Boolean.TRUE.equals(rf.inclusiveMin()),
+                    Boolean.TRUE.equals(rf.inclusiveMax())
+            ));
+        }
+        return out;
+    }
+
     // --------- helper para construir la consulta dinámica ----------
     private DynamicQueryRequest1 toDynReq(CombosDTO.Response combo, Integer limit) {
         return new DynamicQueryRequest1(
@@ -114,7 +127,8 @@ public class ComboService {
                 limit,
                 null,
                 null,
-                resolveTemplateText(combo)
+                resolveTemplateText(combo),
+                toDynRanges(combo.rangos)
         );
     }
 
@@ -142,5 +156,7 @@ public class ComboService {
         var rows = this.previewFromCombo(id, limit); // ya existe
         return dynamicService.precheckRows(rows, template);
     }
+
+
 
 }

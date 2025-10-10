@@ -10,5 +10,6 @@ public record DynamicQueryRequest1(
         Integer limit,
         Integer importeExtra,
         Boolean selectAll,   //PARA PRUEBAS
-        String template
+        String template,
+        List<RangeFilter> rangos
 ){}
