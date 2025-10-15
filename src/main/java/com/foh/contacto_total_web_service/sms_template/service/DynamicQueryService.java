@@ -724,36 +724,32 @@ public class DynamicQueryService {
             List<String> headerList = new ArrayList<>(headers);
 
             // si existe _SMS_, VAR1 = SMS y el contador arranca en 2
-            boolean hasSms = headerList.stream()
-                    .anyMatch(x -> "_SMS_".equals(x) || "SMS".equalsIgnoreCase(x));
-            int varCounter = hasSms ? 2 : 1;
-
             var hRow = sh.createRow(0);
-            for (int i = 0; i < headerList.size(); i++) {
-                String h = headerList.get(i);
+            hRow.createCell(0).setCellValue("Celular");
+            for (int i = 1; i <= 15; i++) {
                 var cell = hRow.createCell(i);
-                String hUp = h == null ? "" : h.toUpperCase(Locale.ROOT);
-                if ("TELEFONOCELULAR".equals(hUp)) {
-                    cell.setCellValue("Celular");
-                } else if ("_SMS_".equals(h) || "SMS".equals(hUp)) { // ← acepta ambas variantes
-                    cell.setCellValue("VAR1");
-                } else {
-                    cell.setCellValue("VAR" + (varCounter++));
-                }
+                cell.setCellValue("VAR" + i);
                 cell.setCellStyle(headerStyle);
             }
+            // Aplicar estilo a la primera columna también
+            hRow.getCell(0).setCellStyle(headerStyle);
 
             // 5) Escribir filas con los headers definidos
             int r = 1;
             for (var row : rows) {
                 var x = sh.createRow(r++);
-                for (int c = 0; c < headers.size(); c++) {
+                // Siempre crear 16 celdas
+                for (int c = 0; c < 16; c++) {
                     var cell = x.createCell(c);
-                    writeCell(cell, row.get(headers.get(c)));
+                    if (c < headers.size()) {
+                        writeCell(cell, row.get(headers.get(c)));
+                    } else {
+                        cell.setBlank(); // Celda vacía para columnas sin datos
+                    }
                 }
             }
 
-            for (int i = 0; i < headers.size(); i++) sh.autoSizeColumn(i);
+            for (int i = 0; i < 16; i++) sh.autoSizeColumn(i);
             wb.write(out);
             out.flush();
         }
@@ -1491,10 +1487,6 @@ public class DynamicQueryService {
 
             List<String> headerList = new ArrayList<>(headers);
 
-            // si existe _SMS_, VAR1 = SMS y el contador arranca en 2
-            boolean hasSms = headerList.stream()
-                    .anyMatch(x -> "_SMS_".equals(x) || "SMS".equalsIgnoreCase(x));
-            int varCounter = hasSms ? 2 : 1;
 
             // estilo
             var hRow = sh.createRow(0);
@@ -1502,29 +1494,27 @@ public class DynamicQueryService {
             var font = wb.createFont(); font.setBold(true);
             headerStyle.setFont(font);
 
-            // etiquetas visibles
-            for (int i = 0; i < headerList.size(); i++) {
-                String h = headerList.get(i);
+
+            // SIEMPRE crear 16 columnas de cabecera
+            hRow.createCell(0).setCellValue("Celular");
+            for (int i = 1; i <= 15; i++) {
                 var cell = hRow.createCell(i);
-                if ("TELEFONOCELULAR".equalsIgnoreCase(h)) {
-                    cell.setCellValue("Celular");
-                } else if ("_SMS_".equals(h)) {
-                    cell.setCellValue("VAR1");
-                } else {
-                    cell.setCellValue("VAR" + (varCounter++));
-                }
+                cell.setCellValue("VAR" + i);
                 cell.setCellStyle(headerStyle);
             }
-
-
+            hRow.getCell(0).setCellStyle(headerStyle);
 
             int rIdx = 1;
             for (var row : rows) {
                 var x = sh.createRow(rIdx++);
-                int ci = 0;
-                for (String h : headers) {
-                    var cell = x.createCell(ci++);
-                    writeCell(cell, row.get(h));
+                // Siempre crear 16 celdas
+                for (int ci = 0; ci < 16; ci++) {
+                    var cell = x.createCell(ci);
+                    if (ci < headerList.size()) {
+                        writeCell(cell, row.get(headerList.get(ci)));
+                    } else {
+                        cell.setBlank();
+                    }
                 }
             }
 
@@ -1744,32 +1734,15 @@ public class DynamicQueryService {
             var font = wb.createFont(); font.setBold(true);
             headerStyle.setFont(font);
 
-// "headers" es un LinkedHashSet: conviértelo a lista para indexar
-            List<String> headerList = new ArrayList<>(headers);
 
-// si existe _SMS_, entonces VAR1 = SMS y el contador de VAR arranca en 2
-            boolean hasSms = headerList.stream()
-                    .anyMatch(x -> "_SMS_".equals(x) || "SMS".equalsIgnoreCase(x));
-            int varCounter = hasSms ? 2 : 1;
-
-// construimos los labels visibles
-            List<String> display = new ArrayList<>(headerList.size());
-            for (String h : headerList) {
-                if ("TELEFONOCELULAR".equalsIgnoreCase(h)) {
-                    display.add("Celular");
-                } else if ("_SMS_".equals(h)) {
-                    display.add("VAR1");
-                } else {
-                    display.add("VAR" + (varCounter++));
-                }
-            }
-
-        // escribe la fila de encabezados con los labels calculados
-            for (int c = 0; c < display.size(); c++) {
-                var cell = hRow.createCell(c);
-                cell.setCellValue(display.get(c));
+            // si existe _SMS_, entonces VAR1 = SMS y el contador de VAR arranca en 2
+            hRow.createCell(0).setCellValue("Celular");
+            for (int i = 1; i <= 15; i++) {
+                var cell = hRow.createCell(i);
+                cell.setCellValue("VAR" + i);
                 cell.setCellStyle(headerStyle);
             }
+            hRow.getCell(0).setCellStyle(headerStyle);
 
 
             // Asegura que las filas base tengan SMS (como en el normal)
@@ -1782,21 +1755,30 @@ public class DynamicQueryService {
 
             int rIdx = 1;
             // base primero
+            List<String> headerList = new ArrayList<>(headers);
+
+            // base primero
             for (var row : baseRows) {
                 var x = sh.createRow(rIdx++);
-                int ci = 0;
-                for (String h : headers) {
-                    var cell = x.createCell(ci++);
-                    writeCell(cell, row.get(h));
+                for (int ci = 0; ci < 16; ci++) {
+                    var cell = x.createCell(ci);
+                    if (ci < headerList.size()) {
+                        writeCell(cell, row.get(headerList.get(ci)));
+                    } else {
+                        cell.setBlank();
+                    }
                 }
             }
             // luego las añadidas
             for (var row : extraRows) {
                 var x = sh.createRow(rIdx++);
-                int ci = 0;
-                for (String h : headers) {
-                    var cell = x.createCell(ci++);
-                    writeCell(cell, row.get(h));
+                for (int ci = 0; ci < 16; ci++) {
+                    var cell = x.createCell(ci);
+                    if (ci < headerList.size()) {
+                        writeCell(cell, row.get(headerList.get(ci)));
+                    } else {
+                        cell.setBlank();
+                    }
                 }
             }
 
