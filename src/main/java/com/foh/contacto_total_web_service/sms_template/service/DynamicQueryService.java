@@ -218,7 +218,8 @@ public class DynamicQueryService {
         String tramo = Optional.ofNullable(req.tramo()).orElse("").trim();
         if (tramo.equals("3")) where.add("tm.RANGOMORAPROYAG = 'Tramo 3'");
         else if (tramo.equals("5")) where.add("tm.RANGOMORAPROYAG = 'Tramo 5'");
-        else throw new IllegalArgumentException("Debes indicar tramo '3' o '5'");
+        else if (tramo.equals("CONTACTO_TOTAL")) where.add("tm.RANGOMORAPROYAG = 'CONTACTO_TOTAL'");
+        else throw new IllegalArgumentException("Debes indicar tramo '3', '5' o 'CONTACTO_TOTAL'");
 
         // 3.2) flags por selects
         Set<String> selectsSet = new HashSet<>(selectsReq);
