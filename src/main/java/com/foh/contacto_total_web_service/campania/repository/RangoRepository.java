@@ -171,38 +171,28 @@ public class RangoRepository {
 
     /**
      * Construye la consulta principal que une todas las subconsultas
-     * Elimina duplicados usando subconsulta con GROUP BY (compatible con MySQL 5.7)
      */
     private String construirConsultaPrincipal(List<String> subconsultas) {
         String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
         return """
-            SELECT C.DOCUMENTO,
-                   C.TELEFONO,
-                   C.TIPI
+            SELECT DOCUMENTO,
+                   COALESCE(TELEFONOCELULAR, telefonodomicilio, telefonolaboral, telfreferencia1, telfreferencia2) AS TELEFONO,
+                   TIPI
               FROM (
-                   SELECT DOCUMENTO,
-                          MAX(COALESCE(TELEFONOCELULAR, telefonodomicilio, telefonolaboral, telfreferencia1, telfreferencia2)) AS TELEFONO,
-                          MAX(TIPI) AS TIPI,
-                          MIN(BLOQUE) AS MIN_BLOQUE,
-                          MAX(SLDCAPCONS) AS MAX_SLDCAPCONS
-                     FROM (
-                          %s
-                     ) B
-                    WHERE DOCUMENTO NOT IN (
-                          SELECT DOCUMENTO
-                            FROM blacklist
-                           WHERE DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN FECHA_INICIO AND FECHA_FIN
-                    )
-                      AND TELEFONOCELULAR NOT IN (
-                          SELECT DISTINCT Telefono
-                            FROM GESTION_HISTORICA_BI
-                           WHERE Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
-                      )
-                      AND TELEFONOCELULAR != ''
-                 GROUP BY DOCUMENTO
-              ) C
-             WHERE C.TELEFONO IS NOT NULL AND C.TELEFONO != ''
-             ORDER BY C.MIN_BLOQUE, C.MAX_SLDCAPCONS DESC;
+                   %s
+              ) B
+             WHERE DOCUMENTO NOT IN (
+                   SELECT DOCUMENTO
+                     FROM blacklist
+                    WHERE DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN FECHA_INICIO AND FECHA_FIN
+             )
+               AND TELEFONOCELULAR NOT IN (
+                   SELECT DISTINCT Telefono
+                     FROM GESTION_HISTORICA_BI
+                    WHERE Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
+               )
+               AND TELEFONOCELULAR != ''
+             ORDER BY BLOQUE, SLDCAPCONS DESC;
             """.formatted(unionSubconsultas);
     }
 
