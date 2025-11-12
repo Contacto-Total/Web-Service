@@ -45,13 +45,9 @@ public class ReporteRepository {
         System.out.println("Campaign Name: " + request.getCampaignName());
 
         StringBuilder constructorConsulta = new StringBuilder();
-        // Usar variables de usuario para eliminar duplicados (compatible con MySQL 5.7)
+        // Usar DISTINCT para eliminar duplicados (compatible con MySQL 5.7)
         constructorConsulta.append("SELECT RANGO, COUNT(1) FROM (");
-        constructorConsulta.append("SELECT DOCUMENTO, RANGO, RANGO_TIPO FROM (");
-        constructorConsulta.append("SELECT DOCUMENTO, RANGO, RANGO_TIPO, BLOQUE, SLDCAPCONS, ");
-        constructorConsulta.append("@rn := IF(@prev_doc = DOCUMENTO, @rn + 1, 1) AS rn, ");
-        constructorConsulta.append("@prev_doc := DOCUMENTO ");
-        constructorConsulta.append("FROM (SELECT * FROM (");
+        constructorConsulta.append("SELECT DISTINCT DOCUMENTO, RANGO, RANGO_TIPO FROM (");
 
         String condicionFechas = construirCondicionFechas(request.getDueDates());
         String condicionContenido = construirCondicionContenido(request.getCampaignName(), request.getContent());
@@ -63,10 +59,8 @@ public class ReporteRepository {
         hayConsultaPrevia = agregarConsultaPromesasRotas(request, constructorConsulta, documentosPromesasCaidas, hayConsultaPrevia, condicionFechas, condicionContenido);
         hayConsultaPrevia = agregarConsultaNoContactados(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
 
-        // Aplicar variables de usuario para eliminar duplicados priorizando por BLOQUE
-        constructorConsulta.append(") subconsulta ORDER BY DOCUMENTO, BLOQUE ASC, SLDCAPCONS DESC) sorted, ");
-        constructorConsulta.append("(SELECT @rn := 0, @prev_doc := '') vars) datos_con_rn ");
-        constructorConsulta.append("WHERE rn = 1) datos_unicos ");
+        // Cerrar subconsulta
+        constructorConsulta.append(") subconsulta) datos_unicos ");
 
         // Finalizar la consulta con GROUP BY y ORDER BY
         finalizarConsulta(constructorConsulta);
