@@ -171,7 +171,7 @@ public class RangoRepository {
 
     /**
      * Construye la consulta principal que une todas las subconsultas
-     * Aplica ROW_NUMBER para eliminar duplicados priorizando por BLOQUE y SLDCAPCONS
+     * Usa variables de usuario para eliminar duplicados (compatible con MySQL 5.7)
      */
     private String construirConsultaPrincipal(List<String> subconsultas) {
         String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
@@ -183,10 +183,13 @@ public class RangoRepository {
                           TIPI,
                           BLOQUE,
                           SLDCAPCONS,
-                          ROW_NUMBER() OVER (PARTITION BY DOCUMENTO ORDER BY BLOQUE ASC, SLDCAPCONS DESC) AS rn
+                          @rn := IF(@prev_doc = DOCUMENTO, @rn + 1, 1) AS rn,
+                          @prev_doc := DOCUMENTO
                      FROM (
-                          %s
-                     ) B
+                          SELECT * FROM (%s) B
+                          ORDER BY DOCUMENTO, BLOQUE ASC, SLDCAPCONS DESC
+                     ) sorted,
+                     (SELECT @rn := 0, @prev_doc := '') vars
                     WHERE DOCUMENTO NOT IN (
                           SELECT DOCUMENTO
                             FROM blacklist
