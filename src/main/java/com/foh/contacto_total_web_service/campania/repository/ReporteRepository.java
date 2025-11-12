@@ -382,8 +382,8 @@ public class ReporteRepository {
      * Finaliza la construcción de la consulta con GROUP BY y ORDER BY
      */
     private void finalizarConsulta(StringBuilder constructorConsulta) {
-        constructorConsulta.append(") E GROUP BY RANGO, RANGO_TIPO ")
-                .append("ORDER BY FIELD('RANGO_TIPO', '")
+        constructorConsulta.append("GROUP BY RANGO, RANGO_TIPO ")
+                .append("ORDER BY FIELD(RANGO_TIPO, '")
                 .append(TIPO_CONTACTO_DIRECTO).append("', '")
                 .append(TIPO_CONTACTO_INDIRECTO).append("', '")
                 .append(TIPO_PROMESA_ROTA).append("', '")
