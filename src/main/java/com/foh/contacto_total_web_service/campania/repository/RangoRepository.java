@@ -176,7 +176,7 @@ public class RangoRepository {
         String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
         return """
             SELECT DOCUMENTO,
-                   COALESCE(TELEFONOCELULAR, telefonodomicilio, telefonolaboral, telfreferencia1, telfreferencia2) AS TELEFONO,
+                   COALESCE(TELEFONOCELULAR, telefonodomicilio, telefonolaboral, telfreferencia1, telfreferencia2),
                    TIPI
               FROM (
                    %s
