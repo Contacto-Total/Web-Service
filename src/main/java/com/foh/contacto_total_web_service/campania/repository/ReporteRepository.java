@@ -45,7 +45,9 @@ public class ReporteRepository {
         System.out.println("Campaign Name: " + request.getCampaignName());
 
         StringBuilder constructorConsulta = new StringBuilder();
+        // Primero construir la consulta con ROW_NUMBER para eliminar duplicados
         constructorConsulta.append("SELECT RANGO, COUNT(1) FROM (");
+        constructorConsulta.append("SELECT DOCUMENTO, RANGO, RANGO_TIPO, BLOQUE FROM (");
 
         String condicionFechas = construirCondicionFechas(request.getDueDates());
         String condicionContenido = construirCondicionContenido(request.getCampaignName(), request.getContent());
@@ -56,6 +58,10 @@ public class ReporteRepository {
         hayConsultaPrevia = agregarConsultaContactoIndirecto(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
         hayConsultaPrevia = agregarConsultaPromesasRotas(request, constructorConsulta, documentosPromesasCaidas, hayConsultaPrevia, condicionFechas, condicionContenido);
         hayConsultaPrevia = agregarConsultaNoContactados(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
+
+        // Aplicar ROW_NUMBER para eliminar duplicados priorizando por BLOQUE
+        constructorConsulta.append(") subconsulta ");
+        constructorConsulta.append(") datos_con_rn WHERE rn = 1) datos_unicos ");
 
         // Finalizar la consulta con GROUP BY y ORDER BY
         finalizarConsulta(constructorConsulta);
@@ -96,6 +102,7 @@ public class ReporteRepository {
         );
 
         String subconsulta = construirSubconsultaBase(
+                1, // Bloque 1: Contacto Directo
                 condicionesRango,
                 TIPO_CONTACTO_DIRECTO,
                 columnaFiltro,
@@ -137,6 +144,7 @@ public class ReporteRepository {
         );
 
         String subconsulta = construirSubconsultaBase(
+                2, // Bloque 2: Contacto Indirecto
                 condicionesRango,
                 TIPO_CONTACTO_INDIRECTO,
                 columnaFiltro,
@@ -183,6 +191,7 @@ public class ReporteRepository {
         String condicionPagadasHoy = construirCondicionPagadasHoy(request.getExcluirPagadasHoy());
 
         String subconsulta = construirSubconsultaBase(
+                3, // Bloque 3: Promesa Rota
                 condicionesRango,
                 TIPO_PROMESA_ROTA,
                 columnaFiltro,
@@ -228,6 +237,7 @@ public class ReporteRepository {
                         "'NO CONTESTA', 'APAGADO', 'EQUIVOCADO', 'FUERA DE SERVICIO - NO EXISTE'))";
 
         String subconsulta = construirSubconsultaNoContactados(
+                4, // Bloque 4: No Contactado
                 condicionesRango,
                 columnaFiltro,
                 condicionesNoContactado,
@@ -242,8 +252,10 @@ public class ReporteRepository {
 
     /**
      * Construye la estructura base de subconsulta común a la mayoría de tipos
+     * Incluye BLOQUE, DOCUMENTO, RANGO, RANGO_TIPO, SLDCAPCONS y ROW_NUMBER
      */
     private String construirSubconsultaBase(
+            int numeroBloque,
             String condicionesRango,
             String tipoRango,
             String columnaMontos,
@@ -256,7 +268,14 @@ public class ReporteRepository {
         StringBuilder subconsulta = new StringBuilder();
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
-        subconsulta.append("SELECT *, '").append(tipoRango).append("' AS RANGO_TIPO FROM (")
+        subconsulta.append("SELECT ").append(numeroBloque).append(" AS BLOQUE, ")
+                .append("b.documento AS DOCUMENTO, ")
+                .append("b.rango AS RANGO, '")
+                .append(tipoRango).append("' AS RANGO_TIPO, ")
+                .append("b.SLDCAPCONS, ")
+                .append("ROW_NUMBER() OVER (PARTITION BY b.documento ORDER BY ")
+                .append(numeroBloque).append(" ASC, b.SLDCAPCONS DESC) AS rn ")
+                .append("FROM (")
                 .append("SELECT BUSCAR_MAYOR_TIP(documento) TIPI, a.*, ")
                 .append(condicionesRango)
                 .append(" FROM TEMP_MERGE a ")
@@ -293,8 +312,10 @@ public class ReporteRepository {
 
     /**
      * Construye la subconsulta específica para no contactados (tiene estructura ligeramente diferente)
+     * Incluye BLOQUE, DOCUMENTO, RANGO, RANGO_TIPO, SLDCAPCONS y ROW_NUMBER
      */
     private String construirSubconsultaNoContactados(
+            int numeroBloque,
             String condicionesRango,
             String columnaFiltro,
             String condicionesNoContactado,
@@ -305,7 +326,14 @@ public class ReporteRepository {
         StringBuilder subconsulta = new StringBuilder();
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
-        subconsulta.append("SELECT *, '").append(TIPO_NO_CONTACTADO).append("' AS RANGO_TIPO FROM (")
+        subconsulta.append("SELECT ").append(numeroBloque).append(" AS BLOQUE, ")
+                .append("b.documento AS DOCUMENTO, ")
+                .append("b.rango AS RANGO, '")
+                .append(TIPO_NO_CONTACTADO).append("' AS RANGO_TIPO, ")
+                .append("b.SLDCAPCONS, ")
+                .append("ROW_NUMBER() OVER (PARTITION BY b.documento ORDER BY ")
+                .append(numeroBloque).append(" ASC, b.SLDCAPCONS DESC) AS rn ")
+                .append("FROM (")
                 .append("SELECT BUSCAR_MAYOR_TIP(documento) TIPI, a.*, ").append(condicionesRango)
                 .append(" FROM TEMP_MERGE a ")
                 .append("WHERE DOCUMENTO NOT IN (")
@@ -321,6 +349,10 @@ public class ReporteRepository {
         // Agregar condición de fechas si existe
         if (!condicionFechas.isEmpty()) {
             subconsulta.append(condicionFechas);
+        }
+
+        if (!condicionContenido.isEmpty()) {
+            subconsulta.append(" ").append(condicionContenido);
         }
 
         subconsulta.append(" ORDER BY SLDCAPCONS DESC) b ")
