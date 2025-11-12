@@ -45,9 +45,13 @@ public class ReporteRepository {
         System.out.println("Campaign Name: " + request.getCampaignName());
 
         StringBuilder constructorConsulta = new StringBuilder();
-        // Primero construir la consulta con ROW_NUMBER para eliminar duplicados
+        // Usar variables de usuario para eliminar duplicados (compatible con MySQL 5.7)
         constructorConsulta.append("SELECT RANGO, COUNT(1) FROM (");
-        constructorConsulta.append("SELECT DOCUMENTO, RANGO, RANGO_TIPO, BLOQUE FROM (");
+        constructorConsulta.append("SELECT DOCUMENTO, RANGO, RANGO_TIPO FROM (");
+        constructorConsulta.append("SELECT DOCUMENTO, RANGO, RANGO_TIPO, BLOQUE, SLDCAPCONS, ");
+        constructorConsulta.append("@rn := IF(@prev_doc = DOCUMENTO, @rn + 1, 1) AS rn, ");
+        constructorConsulta.append("@prev_doc := DOCUMENTO ");
+        constructorConsulta.append("FROM (SELECT * FROM (");
 
         String condicionFechas = construirCondicionFechas(request.getDueDates());
         String condicionContenido = construirCondicionContenido(request.getCampaignName(), request.getContent());
@@ -59,9 +63,10 @@ public class ReporteRepository {
         hayConsultaPrevia = agregarConsultaPromesasRotas(request, constructorConsulta, documentosPromesasCaidas, hayConsultaPrevia, condicionFechas, condicionContenido);
         hayConsultaPrevia = agregarConsultaNoContactados(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
 
-        // Aplicar ROW_NUMBER para eliminar duplicados priorizando por BLOQUE
-        constructorConsulta.append(") subconsulta ");
-        constructorConsulta.append(") datos_con_rn WHERE rn = 1) datos_unicos ");
+        // Aplicar variables de usuario para eliminar duplicados priorizando por BLOQUE
+        constructorConsulta.append(") subconsulta ORDER BY DOCUMENTO, BLOQUE ASC, SLDCAPCONS DESC) sorted, ");
+        constructorConsulta.append("(SELECT @rn := 0, @prev_doc := '') vars) datos_con_rn ");
+        constructorConsulta.append("WHERE rn = 1) datos_unicos ");
 
         // Finalizar la consulta con GROUP BY y ORDER BY
         finalizarConsulta(constructorConsulta);
@@ -252,7 +257,7 @@ public class ReporteRepository {
 
     /**
      * Construye la estructura base de subconsulta común a la mayoría de tipos
-     * Incluye BLOQUE, DOCUMENTO, RANGO, RANGO_TIPO, SLDCAPCONS y ROW_NUMBER
+     * Incluye BLOQUE, DOCUMENTO, RANGO, RANGO_TIPO y SLDCAPCONS
      */
     private String construirSubconsultaBase(
             int numeroBloque,
@@ -272,9 +277,7 @@ public class ReporteRepository {
                 .append("b.documento AS DOCUMENTO, ")
                 .append("b.rango AS RANGO, '")
                 .append(tipoRango).append("' AS RANGO_TIPO, ")
-                .append("b.SLDCAPCONS, ")
-                .append("ROW_NUMBER() OVER (PARTITION BY b.documento ORDER BY ")
-                .append(numeroBloque).append(" ASC, b.SLDCAPCONS DESC) AS rn ")
+                .append("b.SLDCAPCONS ")
                 .append("FROM (")
                 .append("SELECT BUSCAR_MAYOR_TIP(documento) TIPI, a.*, ")
                 .append(condicionesRango)
@@ -312,7 +315,7 @@ public class ReporteRepository {
 
     /**
      * Construye la subconsulta específica para no contactados (tiene estructura ligeramente diferente)
-     * Incluye BLOQUE, DOCUMENTO, RANGO, RANGO_TIPO, SLDCAPCONS y ROW_NUMBER
+     * Incluye BLOQUE, DOCUMENTO, RANGO, RANGO_TIPO y SLDCAPCONS
      */
     private String construirSubconsultaNoContactados(
             int numeroBloque,
@@ -330,9 +333,7 @@ public class ReporteRepository {
                 .append("b.documento AS DOCUMENTO, ")
                 .append("b.rango AS RANGO, '")
                 .append(TIPO_NO_CONTACTADO).append("' AS RANGO_TIPO, ")
-                .append("b.SLDCAPCONS, ")
-                .append("ROW_NUMBER() OVER (PARTITION BY b.documento ORDER BY ")
-                .append(numeroBloque).append(" ASC, b.SLDCAPCONS DESC) AS rn ")
+                .append("b.SLDCAPCONS ")
                 .append("FROM (")
                 .append("SELECT BUSCAR_MAYOR_TIP(documento) TIPI, a.*, ").append(condicionesRango)
                 .append(" FROM TEMP_MERGE a ")
