@@ -45,9 +45,9 @@ public class ReporteRepository {
         System.out.println("Campaign Name: " + request.getCampaignName());
 
         StringBuilder constructorConsulta = new StringBuilder();
-        // Usar DISTINCT para eliminar duplicados (compatible con MySQL 5.7)
+        // Usar GROUP BY para eliminar duplicados (compatible con MySQL 5.7)
         constructorConsulta.append("SELECT RANGO, COUNT(1) FROM (");
-        constructorConsulta.append("SELECT DISTINCT DOCUMENTO, RANGO, RANGO_TIPO FROM (");
+        constructorConsulta.append("SELECT DOCUMENTO, RANGO, RANGO_TIPO, MIN(BLOQUE) AS BLOQUE FROM (");
 
         String condicionFechas = construirCondicionFechas(request.getDueDates());
         String condicionContenido = construirCondicionContenido(request.getCampaignName(), request.getContent());
@@ -59,8 +59,8 @@ public class ReporteRepository {
         hayConsultaPrevia = agregarConsultaPromesasRotas(request, constructorConsulta, documentosPromesasCaidas, hayConsultaPrevia, condicionFechas, condicionContenido);
         hayConsultaPrevia = agregarConsultaNoContactados(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
 
-        // Cerrar subconsulta
-        constructorConsulta.append(") subconsulta) datos_unicos ");
+        // Cerrar subconsulta con GROUP BY
+        constructorConsulta.append(") subconsulta GROUP BY DOCUMENTO, RANGO, RANGO_TIPO) datos_unicos ");
 
         // Finalizar la consulta con GROUP BY y ORDER BY
         finalizarConsulta(constructorConsulta);
