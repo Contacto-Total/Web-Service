@@ -125,7 +125,7 @@ public class ComboService {
                 combo.condiciones,
                 combo.restricciones,
                 limit,
-                null,
+                combo.importeExtra,
                 null,
                 resolveTemplateText(combo),
                 toDynRanges(combo.rangos)

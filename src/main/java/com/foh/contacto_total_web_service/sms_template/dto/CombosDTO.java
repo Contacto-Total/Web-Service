@@ -24,6 +24,7 @@ public class CombosDTO {
         public Set<String> condiciones;
         public Restricciones restricciones;
         public List<RangeFilter> rangos;
+        public Integer importeExtra;
     }
 
 
@@ -40,6 +41,7 @@ public class CombosDTO {
         public Restricciones restricciones;
         public Boolean isActive;
         public List<RangeFilter> rangos;
+        public Integer importeExtra;
     }
 
     public static class Response {
@@ -56,5 +58,6 @@ public class CombosDTO {
         public java.sql.Timestamp createdAt;
         public java.sql.Timestamp updatedAt;
         public List<RangeFilter> rangos;
+        public Integer importeExtra;
     }
 }
