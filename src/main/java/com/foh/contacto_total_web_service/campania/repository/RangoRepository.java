@@ -176,30 +176,25 @@ public class RangoRepository {
     private String construirConsultaPrincipal(List<String> subconsultas) {
         String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
         return """
-            SELECT DOCUMENTO, TELEFONO, TIPI
+            SELECT DOCUMENTO,
+                   COALESCE(TELEFONOCELULAR, telefonodomicilio, telefonolaboral, telfreferencia1, telfreferencia2) AS TELEFONO,
+                   TIPI
               FROM (
-                   SELECT DOCUMENTO,
-                          COALESCE(TELEFONOCELULAR, telefonodomicilio, telefonolaboral, telfreferencia1, telfreferencia2) AS TELEFONO,
-                          TIPI,
-                          MIN(BLOQUE) AS BLOQUE,
-                          MAX(SLDCAPCONS) AS SLDCAPCONS
-                     FROM (
-                          %s
-                     ) B
-                    WHERE DOCUMENTO NOT IN (
-                          SELECT DOCUMENTO
-                            FROM blacklist
-                           WHERE DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN FECHA_INICIO AND FECHA_FIN
-                    )
-                      AND TELEFONOCELULAR NOT IN (
-                          SELECT DISTINCT Telefono
-                            FROM GESTION_HISTORICA_BI
-                           WHERE Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
-                      )
-                      AND TELEFONOCELULAR != ''
-                 GROUP BY DOCUMENTO, TELEFONOCELULAR, telefonodomicilio, telefonolaboral, telfreferencia1, telfreferencia2, TIPI
-              ) ranked
-             ORDER BY BLOQUE, SLDCAPCONS DESC;
+                   %s
+              ) B
+             WHERE DOCUMENTO NOT IN (
+                   SELECT DOCUMENTO
+                     FROM blacklist
+                    WHERE DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN FECHA_INICIO AND FECHA_FIN
+             )
+               AND TELEFONOCELULAR NOT IN (
+                   SELECT DISTINCT Telefono
+                     FROM GESTION_HISTORICA_BI
+                    WHERE Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
+               )
+               AND TELEFONOCELULAR != ''
+          GROUP BY DOCUMENTO
+             ORDER BY MIN(BLOQUE), MAX(SLDCAPCONS) DESC;
             """.formatted(unionSubconsultas);
     }
 
