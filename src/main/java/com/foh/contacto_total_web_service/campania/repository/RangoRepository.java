@@ -171,29 +171,40 @@ public class RangoRepository {
 
     /**
      * Construye la consulta principal que une todas las subconsultas
+     * Elimina duplicados manteniendo la fila con menor BLOQUE y mayor SLDCAPCONS
      */
     private String construirConsultaPrincipal(List<String> subconsultas) {
         String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
         return """
-            SELECT DOCUMENTO,
-                   COALESCE(TELEFONOCELULAR, telefonodomicilio, telefonolaboral, telfreferencia1, telfreferencia2),
-                   TIPI
+            SELECT B1.DOCUMENTO,
+                   COALESCE(B1.TELEFONOCELULAR, B1.telefonodomicilio, B1.telefonolaboral, B1.telfreferencia1, B1.telfreferencia2) AS TELEFONO,
+                   B1.TIPI
               FROM (
                    %s
-              ) B
-             WHERE DOCUMENTO NOT IN (
+              ) B1
+              LEFT JOIN (
+                   %s
+              ) B2 ON B1.DOCUMENTO = B2.DOCUMENTO
+                  AND (B2.BLOQUE < B1.BLOQUE OR (B2.BLOQUE = B1.BLOQUE AND B2.SLDCAPCONS > B1.SLDCAPCONS))
+             WHERE B2.DOCUMENTO IS NULL
+               AND B1.DOCUMENTO NOT IN (
                    SELECT DOCUMENTO
                      FROM blacklist
                     WHERE DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN FECHA_INICIO AND FECHA_FIN
-             )
-               AND TELEFONOCELULAR NOT IN (
+               )
+               AND B1.TELEFONOCELULAR NOT IN (
                    SELECT DISTINCT Telefono
                      FROM GESTION_HISTORICA_BI
                     WHERE Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
                )
-               AND TELEFONOCELULAR != ''
-             ORDER BY BLOQUE, SLDCAPCONS DESC;
-            """.formatted(unionSubconsultas);
+               AND B1.DOCUMENTO NOT IN (
+                   SELECT DISTINCT DOCUMENTO
+                     FROM GESTION_HISTORICA
+                    WHERE Resultado IN ('CANCELACION TOTAL')
+               )
+               AND B1.TELEFONOCELULAR != ''
+             ORDER BY B1.BLOQUE, B1.SLDCAPCONS DESC;
+            """.formatted(unionSubconsultas, unionSubconsultas);
     }
 
     /**

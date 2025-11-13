@@ -263,6 +263,10 @@ public class ReporteRepository {
                 .append("WHERE DOCUMENTO NOT IN (")
                 .append("SELECT DOCUMENTO FROM blacklist ")
                 .append("WHERE DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN FECHA_INICIO AND FECHA_FIN")
+                .append(") ")
+                .append("AND DOCUMENTO NOT IN (")
+                .append("SELECT DISTINCT DOCUMENTO FROM GESTION_HISTORICA ")
+                .append("WHERE Resultado IN ('CANCELACION TOTAL')")
                 .append(") ");
 
         // Agregar condición de rango mora si existe
@@ -311,6 +315,10 @@ public class ReporteRepository {
                 .append("WHERE DOCUMENTO NOT IN (")
                 .append("SELECT DOCUMENTO FROM blacklist ")
                 .append("WHERE DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN FECHA_INICIO AND FECHA_FIN")
+                .append(") ")
+                .append("AND DOCUMENTO NOT IN (")
+                .append("SELECT DISTINCT DOCUMENTO FROM GESTION_HISTORICA ")
+                .append("WHERE Resultado IN ('CANCELACION TOTAL', 'CANCELACION PARCIAL')")
                 .append(") ");
 
         // Agregar condición de rango mora si existe
