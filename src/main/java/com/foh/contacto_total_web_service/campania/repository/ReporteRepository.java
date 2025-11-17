@@ -45,7 +45,7 @@ public class ReporteRepository {
         System.out.println("Campaign Name: " + request.getCampaignName());
 
         StringBuilder constructorConsulta = new StringBuilder();
-        constructorConsulta.append("SELECT RANGO, COUNT(1) FROM (");
+        constructorConsulta.append("SELECT RANGO, COUNT(DISTINCT DOCUMENTO) FROM (");
 
         String condicionFechas = construirCondicionFechas(request.getDueDates());
         String condicionContenido = construirCondicionContenido(request.getCampaignName(), request.getContent());
@@ -318,7 +318,7 @@ public class ReporteRepository {
                 .append(") ")
                 .append("AND DOCUMENTO NOT IN (")
                 .append("SELECT DISTINCT DOCUMENTO FROM GESTION_HISTORICA ")
-                .append("WHERE Resultado IN ('CANCELACION TOTAL', 'CANCELACION PARCIAL')")
+                .append("WHERE Resultado IN ('CANCELACION TOTAL')")
                 .append(") ");
 
         // Agregar condición de rango mora si existe
