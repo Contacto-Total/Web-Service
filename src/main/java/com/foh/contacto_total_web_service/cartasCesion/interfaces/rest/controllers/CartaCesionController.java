@@ -101,6 +101,7 @@ public class CartaCesionController {
             if (pdfContent.isPresent()) {
                 return ResponseEntity.ok()
                         .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
+                        .header("X-Frame-Options", "SAMEORIGIN")
                         .contentType(MediaType.APPLICATION_PDF)
                         .body(pdfContent.get());
             } else {
