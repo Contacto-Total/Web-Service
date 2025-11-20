@@ -102,9 +102,12 @@ public class CartaAcuerdoController {
     @PostMapping(value = "/carta-acuerdo", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<?> generarCartaAcuerdo(@Valid @RequestBody CreateCartaAcuerdoResource resource) {
         try {
+            LOGGER.info("Generando carta de acuerdo para entidad: {}, DNI: {}", resource.entidad(), resource.dni());
 
             var command = CreateCartaAcuerdoCommandFromResourceAssembler.toCommandFromResource(resource);
             byte[] pdfBytes = cartaAcuerdoCommandService.handle(command);
+
+            LOGGER.info("Carta generada exitosamente para entidad: {}", resource.entidad());
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"carta_acuerdo.pdf\"")
