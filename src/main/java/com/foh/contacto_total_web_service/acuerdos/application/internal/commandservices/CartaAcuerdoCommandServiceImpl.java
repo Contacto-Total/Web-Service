@@ -22,6 +22,13 @@ public class CartaAcuerdoCommandServiceImpl implements CartaAcuerdoCommandServic
 
     @Override
     public byte[] handle(CreateCartaAcuerdoCommand command) throws IOException {
+        // Determinar el template según la entidad
+        String templateName = switch (command.entidad().toLowerCase()) {
+            case "financiera_oh" -> "acuerdos/financiera_oh/template_acuerdo";
+            case "nsoluciones" -> "acuerdos/nsoluciones/template_acuerdo";
+            default -> throw new IllegalArgumentException("Entidad no soportada: " + command.entidad());
+        };
+
         // Crear contexto de Thymeleaf
         Context context = new Context();
         context.setVariable("nombreTitular", command.nombreTitular());
@@ -35,11 +42,11 @@ public class CartaAcuerdoCommandServiceImpl implements CartaAcuerdoCommandServic
         context.setVariable("formasPago", command.formasDePago());
 
         // Ruta base absoluta para las imágenes
-        String basePath = Paths.get("src/files/").toAbsolutePath().toUri().toString();
+        String basePath = Paths.get("src/main/resources/static/").toAbsolutePath().toUri().toString();
         context.setVariable("basePath", basePath);
 
         // Renderizar HTML con Thymeleaf
-        String htmlContent = templateEngine.process("template_acuerdo", context);
+        String htmlContent = templateEngine.process(templateName, context);
 
         // Convertir HTML a PDF con Flying Saucer
         ByteArrayOutputStream baos = new ByteArrayOutputStream();

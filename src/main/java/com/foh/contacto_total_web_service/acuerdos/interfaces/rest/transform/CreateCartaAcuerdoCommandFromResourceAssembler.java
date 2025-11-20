@@ -6,6 +6,7 @@ import com.foh.contacto_total_web_service.acuerdos.interfaces.rest.resources.Cre
 public class CreateCartaAcuerdoCommandFromResourceAssembler {
     public static CreateCartaAcuerdoCommand toCommandFromResource(CreateCartaAcuerdoResource resource) {
         return new CreateCartaAcuerdoCommand(
+                resource.entidad(),
                 resource.fechaActual(),
                 resource.nombreTitular(),
                 resource.dni(),
