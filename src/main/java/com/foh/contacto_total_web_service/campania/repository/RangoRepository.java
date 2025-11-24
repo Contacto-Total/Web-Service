@@ -138,6 +138,7 @@ public class RangoRepository {
 
     /**
      * Construye una subconsulta individual para un tipo específico de contacto
+     * Aplica filtros de blacklist y GESTION_HISTORICA ANTES del UNION ALL
      */
     private String construirSubconsulta(
             int numeroBloque,
@@ -161,7 +162,17 @@ public class RangoRepository {
                           %s
                      FROM TEMP_MERGE a
                      LEFT JOIN TEMP_TIPIFICACION_MAX tc ON a.DOCUMENTO = tc.documento
+                     LEFT JOIN blacklist bl ON a.DOCUMENTO = bl.DOCUMENTO
+                          AND DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN bl.FECHA_INICIO AND bl.FECHA_FIN
+                     LEFT JOIN GESTION_HISTORICA gh ON a.DOCUMENTO = gh.DOCUMENTO
+                          AND gh.Resultado IN ('CANCELACION TOTAL')
+                     LEFT JOIN GESTION_HISTORICA_BI ghbi ON a.TELEFONOCELULAR = ghbi.Telefono
+                          AND ghbi.Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
                     %s
+                     AND bl.DOCUMENTO IS NULL
+                     AND gh.DOCUMENTO IS NULL
+                     AND ghbi.Telefono IS NULL
+                     AND a.TELEFONOCELULAR != ''
               ) b
              WHERE b.rango IS NOT NULL
                AND CAST(%s AS DECIMAL(10, 2)) > 0
@@ -173,7 +184,7 @@ public class RangoRepository {
     /**
      * Construye la consulta principal que une todas las subconsultas
      * Elimina duplicados manteniendo la fila con menor BLOQUE y mayor SLDCAPCONS
-     * Optimizada: self-join con LEFT JOIN en lugar de NOT IN para filtros
+     * Los filtros ya fueron aplicados en cada subconsulta, solo queda deduplicar
      */
     private String construirConsultaPrincipal(List<String> subconsultas) {
         String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
@@ -188,17 +199,7 @@ public class RangoRepository {
                    %s
               ) B2 ON B1.DOCUMENTO = B2.DOCUMENTO
                   AND (B2.BLOQUE < B1.BLOQUE OR (B2.BLOQUE = B1.BLOQUE AND B2.SLDCAPCONS > B1.SLDCAPCONS))
-              LEFT JOIN blacklist bl ON B1.DOCUMENTO = bl.DOCUMENTO
-                   AND DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN bl.FECHA_INICIO AND bl.FECHA_FIN
-              LEFT JOIN GESTION_HISTORICA_BI ghbi ON B1.TELEFONOCELULAR = ghbi.Telefono
-                   AND ghbi.Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
-              LEFT JOIN GESTION_HISTORICA gh ON B1.DOCUMENTO = gh.DOCUMENTO
-                   AND gh.Resultado IN ('CANCELACION TOTAL')
              WHERE B2.DOCUMENTO IS NULL
-               AND bl.DOCUMENTO IS NULL
-               AND ghbi.Telefono IS NULL
-               AND gh.DOCUMENTO IS NULL
-               AND B1.TELEFONOCELULAR != ''
              ORDER BY B1.BLOQUE, B1.SLDCAPCONS DESC;
             """.formatted(unionSubconsultas, unionSubconsultas);
     }
