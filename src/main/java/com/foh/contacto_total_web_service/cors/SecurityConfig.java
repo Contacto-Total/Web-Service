@@ -46,6 +46,11 @@ public class SecurityConfig {
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .dispatcherTypeMatchers(
+                                jakarta.servlet.DispatcherType.ASYNC,
+                                jakarta.servlet.DispatcherType.FORWARD,
+                                jakarta.servlet.DispatcherType.INCLUDE
+                        ).permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
