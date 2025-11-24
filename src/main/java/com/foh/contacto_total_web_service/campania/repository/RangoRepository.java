@@ -250,9 +250,12 @@ public class RangoRepository {
                 rangos, tipoRango, columnaMontos);
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
+        // Strip "AS RANGO" from condicionesRango for use in WHERE clause (MySQL 5.0 limitation)
+        String condicionesRangoSinAlias = condicionesRango.replace(" AS RANGO", "");
+
         // Flatten the query to avoid nested subquery issues with type inference
         // Note: condicionesRango already includes "END AS RANGO", no need to add alias
-        // MySQL 5.0 doesn't allow aliases in WHERE, so repeat the CASE statement
+        // MySQL 5.0 doesn't allow aliases in WHERE, so use version without alias
         return """
             SELECT %d AS BLOQUE,
                    a.DOCUMENTO,
@@ -282,7 +285,7 @@ public class RangoRepository {
                AND CAST(a.%s AS DECIMAL(10, 2)) > 0
                AND %s%s
             """.formatted(numeroBloque, condicionesRango, columnaMontos,
-                condicionRangoMora, condicionesRango, columnaMontos,
+                condicionRangoMora, condicionesRangoSinAlias, columnaMontos,
                 condicionesAdicionales, condicionFechas);
     }
 
