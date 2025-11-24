@@ -6,6 +6,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -32,6 +33,7 @@ public class RangoRepository {
      * @param documentosPromesasCaidas Lista de documentos con promesas caídas
      * @return Lista de resultados con documento, teléfono y tipo de contacto
      */
+    @Transactional
     public List<Object[]> findByRangosAndTipoContacto(
             GetFiltersToGenerateFileRequest request,
             List<String> documentosPromesasCaidas
