@@ -260,9 +260,15 @@ public class ReporteRepository {
                 .append("SELECT BUSCAR_MAYOR_TIP(documento) TIPI, a.*, ")
                 .append(condicionesRango)
                 .append(" FROM TEMP_MERGE a ")
-                .append("WHERE DOCUMENTO NOT IN (")
-                .append("SELECT DOCUMENTO FROM blacklist ")
-                .append("WHERE DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN FECHA_INICIO AND FECHA_FIN")
+                .append("WHERE NOT EXISTS (")
+                .append("SELECT 1 FROM blacklist bl ")
+                .append("WHERE bl.DOCUMENTO = a.DOCUMENTO ")
+                .append("AND DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN bl.FECHA_INICIO AND bl.FECHA_FIN")
+                .append(") ")
+                .append("AND NOT EXISTS (")
+                .append("SELECT 1 FROM GESTION_HISTORICA gh ")
+                .append("WHERE gh.DOCUMENTO = a.DOCUMENTO ")
+                .append("AND gh.Resultado = 'CANCELACION TOTAL'")
                 .append(") ");
 
         // Agregar condición de rango mora si existe
@@ -308,9 +314,15 @@ public class ReporteRepository {
         subconsulta.append("SELECT *, '").append(TIPO_NO_CONTACTADO).append("' AS RANGO_TIPO FROM (")
                 .append("SELECT BUSCAR_MAYOR_TIP(documento) TIPI, a.*, ").append(condicionesRango)
                 .append(" FROM TEMP_MERGE a ")
-                .append("WHERE DOCUMENTO NOT IN (")
-                .append("SELECT DOCUMENTO FROM blacklist ")
-                .append("WHERE DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN FECHA_INICIO AND FECHA_FIN")
+                .append("WHERE NOT EXISTS (")
+                .append("SELECT 1 FROM blacklist bl ")
+                .append("WHERE bl.DOCUMENTO = a.DOCUMENTO ")
+                .append("AND DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN bl.FECHA_INICIO AND bl.FECHA_FIN")
+                .append(") ")
+                .append("AND NOT EXISTS (")
+                .append("SELECT 1 FROM GESTION_HISTORICA gh ")
+                .append("WHERE gh.DOCUMENTO = a.DOCUMENTO ")
+                .append("AND gh.Resultado = 'CANCELACION TOTAL'")
                 .append(") ");
 
         // Agregar condición de rango mora si existe

@@ -181,15 +181,23 @@ public class RangoRepository {
               FROM (
                    %s
               ) B
-             WHERE DOCUMENTO NOT IN (
-                   SELECT DOCUMENTO
-                     FROM blacklist
-                    WHERE DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN FECHA_INICIO AND FECHA_FIN
+             WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM blacklist bl
+                    WHERE bl.DOCUMENTO = B.DOCUMENTO
+                      AND DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN bl.FECHA_INICIO AND bl.FECHA_FIN
              )
-               AND TELEFONOCELULAR NOT IN (
-                   SELECT DISTINCT Telefono
-                     FROM GESTION_HISTORICA_BI
-                    WHERE Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM GESTION_HISTORICA gh
+                    WHERE gh.DOCUMENTO = B.DOCUMENTO
+                      AND gh.Resultado = 'CANCELACION TOTAL'
+               )
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM GESTION_HISTORICA_BI ghbi
+                    WHERE ghbi.Telefono = B.TELEFONOCELULAR
+                      AND ghbi.Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
                )
                AND TELEFONOCELULAR != ''
              ORDER BY BLOQUE, SLDCAPCONS DESC;
