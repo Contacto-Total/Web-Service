@@ -168,7 +168,7 @@ public class RangoRepository {
                     request.getDirectContactRanges(),
                     CONTACTO_DIRECTO,
                     columnaFiltro,
-                    "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')",
+                    "tc.TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')",
                     rangoMoraProyectado,
                     condicionFechas,
                     condicionContenido
@@ -183,7 +183,7 @@ public class RangoRepository {
                     request.getIndirectContactRanges(),
                     CONTACTO_INDIRECTO,
                     columnaFiltro,
-                    "TIPI IN ('CONTACTO CON TERCEROS')",
+                    "tc.TIPI IN ('CONTACTO CON TERCEROS')",
                     rangoMoraProyectado,
                     condicionFechas,
                     condicionContenido
@@ -212,8 +212,8 @@ public class RangoRepository {
         // Subconsulta para no contactados
         if (tieneElementos(request.getNotContactedRanges())) {
             String condicionesNoContactado =
-                    "TIPI IN ('MSJ VOZ - SMS - WSP - BAJO PUERTA', 'NO CONTESTA', 'APAGADO', " +
-                            "'EQUIVOCADO', 'FUERA DE SERVICIO - NO EXISTE') OR TIPI IS NULL";
+                    "tc.TIPI IN ('MSJ VOZ - SMS - WSP - BAJO PUERTA', 'NO CONTESTA', 'APAGADO', " +
+                            "'EQUIVOCADO', 'FUERA DE SERVICIO - NO EXISTE') OR tc.TIPI IS NULL";
             String subconsulta = construirSubconsulta(
                     4, // bloque
                     request.getNotContactedRanges(),
@@ -294,7 +294,7 @@ public class RangoRepository {
      * Construye las condiciones específicas para promesas rotas
      */
     private String construirCondicionesPromesasRotas(String condicionDocumentos, String condicionPagadasHoy) {
-        String tiposPromesa = "TIPI IN ('PROMESA DE PAGO', 'OPORTUNIDAD DE PAGO', " +
+        String tiposPromesa = "tc.TIPI IN ('PROMESA DE PAGO', 'OPORTUNIDAD DE PAGO', " +
                 "'RECORDATORIO DE PAGO', 'CONFIRMACION DE ABONO', 'CANCELACION PARCIAL', " +
                 "'CANCELACION TOTAL', 'CANCELACION NO REPORTADAS O APLICADAS')";
         String condicionFinal = tiposPromesa;
