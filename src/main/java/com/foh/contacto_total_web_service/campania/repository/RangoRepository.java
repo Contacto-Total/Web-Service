@@ -252,6 +252,7 @@ public class RangoRepository {
 
         // Flatten the query to avoid nested subquery issues with type inference
         // Note: condicionesRango already includes "END AS RANGO", no need to add alias
+        // MySQL 5.0 doesn't allow aliases in WHERE, so repeat the CASE statement
         return """
             SELECT %d AS BLOQUE,
                    a.DOCUMENTO,
@@ -272,16 +273,16 @@ public class RangoRepository {
                    AND gh.Resultado IN ('CANCELACION TOTAL')
               LEFT JOIN GESTION_HISTORICA_BI ghbi ON a.TELEFONOCELULAR = ghbi.Telefono
                    AND ghbi.Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
-             WHERE (%s) IS NOT NULL
-               AND CAST(a.%s AS DECIMAL(10, 2)) > 0
+               %s
                AND bl.DOCUMENTO IS NULL
                AND gh.DOCUMENTO IS NULL
                AND ghbi.Telefono IS NULL
                AND a.TELEFONOCELULAR != ''
-               %s
+               AND (%s) IS NOT NULL
+               AND CAST(a.%s AS DECIMAL(10, 2)) > 0
                AND %s%s
             """.formatted(numeroBloque, condicionesRango, columnaMontos,
-                condicionesRango, columnaMontos, condicionRangoMora,
+                condicionRangoMora, condicionesRango, columnaMontos,
                 condicionesAdicionales, condicionFechas);
     }
 
