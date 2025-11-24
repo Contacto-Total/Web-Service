@@ -251,6 +251,7 @@ public class RangoRepository {
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
         // Flatten the query to avoid nested subquery issues with type inference
+        // Note: condicionesRango already includes "END AS RANGO", no need to add alias
         return """
             SELECT %d AS BLOQUE,
                    a.DOCUMENTO,
@@ -261,7 +262,7 @@ public class RangoRepository {
                    a.telfreferencia2,
                    COALESCE(tc.TIPI, 'SIN TIPIFICACION') AS TIPI,
                    a.SLDCAPCONS,
-                   %s AS rango,
+                   %s,
                    a.%s AS monto_filtro
               FROM TEMP_MERGE a
               LEFT JOIN TEMP_TIPIFICACION_MAX tc ON a.DOCUMENTO = tc.documento
@@ -273,11 +274,11 @@ public class RangoRepository {
                    AND ghbi.Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
              WHERE (%s) IS NOT NULL
                AND CAST(a.%s AS DECIMAL(10, 2)) > 0
-               %s
                AND bl.DOCUMENTO IS NULL
                AND gh.DOCUMENTO IS NULL
                AND ghbi.Telefono IS NULL
                AND a.TELEFONOCELULAR != ''
+               %s
                AND %s%s
             """.formatted(numeroBloque, condicionesRango, columnaMontos,
                 condicionesRango, columnaMontos, condicionRangoMora,
