@@ -209,6 +209,7 @@ public class RangoRepository {
     /**
      * Construye una subconsulta individual para un tipo específico de contacto
      * Aplica filtros de blacklist y GESTION_HISTORICA ANTES del UNION ALL
+     * Solo selecciona las columnas necesarias para evitar conflictos de tipo
      */
     private String construirSubconsulta(
             int numeroBloque,
@@ -225,10 +226,25 @@ public class RangoRepository {
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
         return """
-            SELECT %d AS BLOQUE, b.*
+            SELECT %d AS BLOQUE,
+                   b.DOCUMENTO,
+                   b.TELEFONOCELULAR,
+                   b.telefonodomicilio,
+                   b.telefonolaboral,
+                   b.telfreferencia1,
+                   b.telfreferencia2,
+                   b.TIPI,
+                   b.SLDCAPCONS,
+                   b.rango
               FROM (
                    SELECT COALESCE(tc.TIPI, 'SIN TIPIFICACION') AS TIPI,
-                          a.*,
+                          a.DOCUMENTO,
+                          a.TELEFONOCELULAR,
+                          a.telefonodomicilio,
+                          a.telefonolaboral,
+                          a.telfreferencia1,
+                          a.telfreferencia2,
+                          a.SLDCAPCONS,
                           %s
                      FROM TEMP_MERGE a
                      LEFT JOIN TEMP_TIPIFICACION_MAX tc ON a.DOCUMENTO = tc.documento
