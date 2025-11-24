@@ -28,11 +28,23 @@ public class ReporteServiceImpl implements ReporteService {
 
     @Override
     public File getReporteByRangesAndGenerateFile(GetFiltersToGenerateFileRequest getFiltersToGenerateFileRequest) {
-        // Actualizar tabla temporal de tipificaciones antes de ejecutar queries
-        reporteRepository.actualizarTipificacionMax();
+        System.out.println("========== [REPORTE SERVICE] INICIO ==========");
+        long startTime = System.currentTimeMillis();
 
+        // Actualizar tabla temporal de tipificaciones antes de ejecutar queries
+        System.out.println("[REPORTE SERVICE] Actualizando TEMP_TIPIFICACION_MAX...");
+        long tipifStart = System.currentTimeMillis();
+        reporteRepository.actualizarTipificacionMax();
+        System.out.println("[REPORTE SERVICE] TEMP_TIPIFICACION_MAX actualizada - Tiempo: " + (System.currentTimeMillis() - tipifStart) + "ms");
+
+        System.out.println("[REPORTE SERVICE] Obteniendo promesas caídas...");
         List<String> promesasCaidas = compromisoRepository.findPromesasCaidasWithoutColchon();
+        System.out.println("[REPORTE SERVICE] Promesas caídas obtenidas: " + promesasCaidas.size() + " registros");
+
+        System.out.println("[REPORTE SERVICE] Ejecutando query de reporte...");
+        long queryStart = System.currentTimeMillis();
         List<Object[]> resultados = reporteRepository.getReporteByRangos(getFiltersToGenerateFileRequest, promesasCaidas);
+        System.out.println("[REPORTE SERVICE] Query completada: " + resultados.size() + " filas - Tiempo: " + (System.currentTimeMillis() - queryStart) + "ms");
 
         Integer rowCount = 0;
 
@@ -216,12 +228,17 @@ public class ReporteServiceImpl implements ReporteService {
                 }
             }
 
+            System.out.println("[REPORTE SERVICE] Guardando archivo Excel...");
+            long saveStart = System.currentTimeMillis();
             try (FileOutputStream outputStream = new FileOutputStream(outputPath)) {
                 workbook.write(outputStream);
             }
+            System.out.println("[REPORTE SERVICE] Archivo guardado - Tiempo: " + (System.currentTimeMillis() - saveStart) + "ms");
 
+            System.out.println("========== [REPORTE SERVICE] FIN - Tiempo total: " + (System.currentTimeMillis() - startTime) + "ms ==========");
             return new File(outputPath);
         } catch (IOException e) {
+            System.err.println("[REPORTE SERVICE] ERROR al generar archivo: " + e.getMessage());
             e.printStackTrace();
             return null;
         }

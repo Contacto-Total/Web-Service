@@ -28,15 +28,28 @@ public class RangoServiceImpl implements RangoService {
 
     @Override
     public File getRangosByRangesAndGenerateFile(GetFiltersToGenerateFileRequest getFiltersToGenerateFileRequest) {
+        System.out.println("========== [RANGO SERVICE] INICIO ==========");
+        long startTime = System.currentTimeMillis();
+
+        System.out.println("[RANGO SERVICE] Obteniendo promesas caídas...");
         List<String> promesasCaidas = compromisoRepository.findPromesasCaidasWithoutColchon();
+        System.out.println("[RANGO SERVICE] Promesas caídas obtenidas: " + promesasCaidas.size() + " registros - Tiempo: " + (System.currentTimeMillis() - startTime) + "ms");
+
+        System.out.println("[RANGO SERVICE] Ejecutando query de rangos...");
+        long queryStart = System.currentTimeMillis();
         List<Object[]> resultados = rangoRepository.findByRangosAndTipoContacto(getFiltersToGenerateFileRequest, promesasCaidas);
+        System.out.println("[RANGO SERVICE] Query completada: " + resultados.size() + " filas - Tiempo: " + (System.currentTimeMillis() - queryStart) + "ms");
 
         String templatePath = "src/files/modelo_campana_asterisk.xlsm";
         String outputPath = "rangos_resultados.xlsm";
 
-        try (FileInputStream fileInputStream = new FileInputStream(templatePath);
-             Workbook workbook = new XSSFWorkbook(fileInputStream)) {
+        try {
+            System.out.println("[RANGO SERVICE] Abriendo archivo Excel template...");
+            FileInputStream fileInputStream = new FileInputStream(templatePath);
+            Workbook workbook = new XSSFWorkbook(fileInputStream);
 
+            System.out.println("[RANGO SERVICE] Escribiendo " + resultados.size() + " filas en Excel...");
+            long excelStart = System.currentTimeMillis();
             Sheet sheet = workbook.getSheetAt(0);
             int rowNum = 1;
 
@@ -45,13 +58,21 @@ public class RangoServiceImpl implements RangoService {
                 newRow.createCell(0).setCellValue(row[0] != null ? row[0].toString() : "");
                 newRow.createCell(1).setCellValue(row[1] != null ? row[1].toString() : "");
             }
+            System.out.println("[RANGO SERVICE] Filas escritas - Tiempo: " + (System.currentTimeMillis() - excelStart) + "ms");
 
+            System.out.println("[RANGO SERVICE] Guardando archivo Excel...");
+            long saveStart = System.currentTimeMillis();
             try (FileOutputStream outputStream = new FileOutputStream(outputPath)) {
                 workbook.write(outputStream);
             }
+            workbook.close();
+            fileInputStream.close();
+            System.out.println("[RANGO SERVICE] Archivo guardado - Tiempo: " + (System.currentTimeMillis() - saveStart) + "ms");
 
+            System.out.println("========== [RANGO SERVICE] FIN - Tiempo total: " + (System.currentTimeMillis() - startTime) + "ms ==========");
             return new File(outputPath);
         } catch (IOException e) {
+            System.err.println("[RANGO SERVICE] ERROR al generar archivo: " + e.getMessage());
             e.printStackTrace();
             return null;
         }

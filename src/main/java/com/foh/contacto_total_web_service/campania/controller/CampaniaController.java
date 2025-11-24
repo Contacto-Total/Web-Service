@@ -42,10 +42,24 @@ public class CampaniaController {
 
     @PostMapping("/generar-zip-reportes")
     public ResponseEntity<Resource> getRangosByRangesAndGenerateFile(@RequestBody GetFiltersToGenerateFileRequest getRangosByRangesAndGenerateFileRequest) {
+        System.out.println("\n\n========================================");
+        System.out.println("====== [CONTROLLER] GENERAR ZIP ======");
+        System.out.println("========================================");
+        long totalStart = System.currentTimeMillis();
+
+        System.out.println("\n[CONTROLLER] Llamando a RangoService...");
+        long rangoStart = System.currentTimeMillis();
         File file1 = rangoService.getRangosByRangesAndGenerateFile(getRangosByRangesAndGenerateFileRequest);
+        System.out.println("[CONTROLLER] RangoService completado - Tiempo: " + (System.currentTimeMillis() - rangoStart) + "ms\n");
+
+        System.out.println("[CONTROLLER] Llamando a ReporteService...");
+        long reporteStart = System.currentTimeMillis();
         File file2 = reporteService.getReporteByRangesAndGenerateFile(getRangosByRangesAndGenerateFileRequest);
+        System.out.println("[CONTROLLER] ReporteService completado - Tiempo: " + (System.currentTimeMillis() - reporteStart) + "ms\n");
 
         if (file1 != null && file1.exists() && file2 != null && file2.exists()) {
+            System.out.println("[CONTROLLER] Creando archivo ZIP...");
+            long zipStart = System.currentTimeMillis();
             File zipFile = new File("rangos_reportes.zip");
             try (FileOutputStream fos = new FileOutputStream(zipFile);
                  ZipOutputStream zipOut = new ZipOutputStream(fos)) {
@@ -53,8 +67,10 @@ public class CampaniaController {
                 addToZipFile(file1, zipOut);
                 addToZipFile(file2, zipOut);
             } catch (IOException e) {
+                System.err.println("[CONTROLLER] ERROR al crear ZIP: " + e.getMessage());
                 return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
             }
+            System.out.println("[CONTROLLER] ZIP creado - Tiempo: " + (System.currentTimeMillis() - zipStart) + "ms");
 
             Resource resource = new FileSystemResource(zipFile);
 
@@ -65,6 +81,10 @@ public class CampaniaController {
             ResponseEntity<Resource> response = ResponseEntity.ok()
                     .headers(headers)
                     .body(resource);
+
+            System.out.println("========================================");
+            System.out.println("[CONTROLLER] PROCESO COMPLETO - Tiempo total: " + (System.currentTimeMillis() - totalStart) + "ms");
+            System.out.println("========================================\n\n");
 
             new Thread(() -> {
                 try {
@@ -79,6 +99,9 @@ public class CampaniaController {
 
             return response;
         } else {
+            System.err.println("[CONTROLLER] ERROR: Uno o ambos archivos no se generaron correctamente");
+            System.err.println("[CONTROLLER] file1: " + (file1 != null ? "existe" : "null"));
+            System.err.println("[CONTROLLER] file2: " + (file2 != null ? "existe" : "null"));
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
