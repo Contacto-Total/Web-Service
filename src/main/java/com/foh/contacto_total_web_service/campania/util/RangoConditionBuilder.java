@@ -35,7 +35,7 @@ public class RangoConditionBuilder {
             return "NULL AS RANGO";
         }
 
-        StringBuilder constructorCase = new StringBuilder("CASE ");
+        StringBuilder constructorCase = new StringBuilder("CAST(CASE ");
 
         for (RangoRequest rango : rangos) {
             String valorMinimo = rango.getMin();
@@ -49,7 +49,7 @@ public class RangoConditionBuilder {
             ));
         }
 
-        constructorCase.append("END AS RANGO");
+        constructorCase.append("END AS CHAR(100)) AS RANGO");
         return constructorCase.toString();
     }
 
