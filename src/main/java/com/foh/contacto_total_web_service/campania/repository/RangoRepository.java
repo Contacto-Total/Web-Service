@@ -250,47 +250,37 @@ public class RangoRepository {
                 rangos, tipoRango, columnaMontos);
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
+        // Flatten the query to avoid nested subquery issues with type inference
         return """
             SELECT %d AS BLOQUE,
-                   b.DOCUMENTO,
-                   b.TELEFONOCELULAR,
-                   b.telefonodomicilio,
-                   b.telefonolaboral,
-                   b.telfreferencia1,
-                   b.telfreferencia2,
-                   b.TIPI,
-                   b.SLDCAPCONS,
-                   b.rango,
-                   b.monto_filtro
-              FROM (
-                   SELECT COALESCE(tc.TIPI, 'SIN TIPIFICACION') AS TIPI,
-                          a.DOCUMENTO,
-                          a.TELEFONOCELULAR,
-                          a.telefonodomicilio,
-                          a.telefonolaboral,
-                          a.telfreferencia1,
-                          a.telfreferencia2,
-                          a.SLDCAPCONS,
-                          a.%s AS monto_filtro,
-                          %s
-                     FROM TEMP_MERGE a
-                     LEFT JOIN TEMP_TIPIFICACION_MAX tc ON a.DOCUMENTO = tc.documento
-                     LEFT JOIN blacklist bl ON a.DOCUMENTO = bl.DOCUMENTO
-                          AND DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN bl.FECHA_INICIO AND bl.FECHA_FIN
-                     LEFT JOIN GESTION_HISTORICA gh ON a.DOCUMENTO = gh.DOCUMENTO
-                          AND gh.Resultado IN ('CANCELACION TOTAL')
-                     LEFT JOIN GESTION_HISTORICA_BI ghbi ON a.TELEFONOCELULAR = ghbi.Telefono
-                          AND ghbi.Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
-                    %s
-                     AND bl.DOCUMENTO IS NULL
-                     AND gh.DOCUMENTO IS NULL
-                     AND ghbi.Telefono IS NULL
-                     AND a.TELEFONOCELULAR != ''
-              ) b
-             WHERE b.rango IS NOT NULL
-               AND CAST(b.monto_filtro AS DECIMAL(10, 2)) > 0
+                   a.DOCUMENTO,
+                   a.TELEFONOCELULAR,
+                   a.telefonodomicilio,
+                   a.telefonolaboral,
+                   a.telfreferencia1,
+                   a.telfreferencia2,
+                   COALESCE(tc.TIPI, 'SIN TIPIFICACION') AS TIPI,
+                   a.SLDCAPCONS,
+                   %s AS rango,
+                   a.%s AS monto_filtro
+              FROM TEMP_MERGE a
+              LEFT JOIN TEMP_TIPIFICACION_MAX tc ON a.DOCUMENTO = tc.documento
+              LEFT JOIN blacklist bl ON a.DOCUMENTO = bl.DOCUMENTO
+                   AND DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN bl.FECHA_INICIO AND bl.FECHA_FIN
+              LEFT JOIN GESTION_HISTORICA gh ON a.DOCUMENTO = gh.DOCUMENTO
+                   AND gh.Resultado IN ('CANCELACION TOTAL')
+              LEFT JOIN GESTION_HISTORICA_BI ghbi ON a.TELEFONOCELULAR = ghbi.Telefono
+                   AND ghbi.Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
+             WHERE (%s) IS NOT NULL
+               AND CAST(a.%s AS DECIMAL(10, 2)) > 0
+               %s
+               AND bl.DOCUMENTO IS NULL
+               AND gh.DOCUMENTO IS NULL
+               AND ghbi.Telefono IS NULL
+               AND a.TELEFONOCELULAR != ''
                AND %s%s
-            """.formatted(numeroBloque, columnaMontos, condicionesRango, condicionRangoMora,
+            """.formatted(numeroBloque, condicionesRango, columnaMontos,
+                condicionesRango, columnaMontos, condicionRangoMora,
                 condicionesAdicionales, condicionFechas);
     }
 
