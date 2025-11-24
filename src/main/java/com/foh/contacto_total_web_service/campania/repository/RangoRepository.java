@@ -235,7 +235,8 @@ public class RangoRepository {
                    b.telfreferencia2,
                    b.TIPI,
                    b.SLDCAPCONS,
-                   b.rango
+                   b.rango,
+                   b.monto_filtro
               FROM (
                    SELECT COALESCE(tc.TIPI, 'SIN TIPIFICACION') AS TIPI,
                           a.DOCUMENTO,
@@ -245,6 +246,7 @@ public class RangoRepository {
                           a.telfreferencia1,
                           a.telfreferencia2,
                           a.SLDCAPCONS,
+                          a.%s AS monto_filtro,
                           %s
                      FROM TEMP_MERGE a
                      LEFT JOIN TEMP_TIPIFICACION_MAX tc ON a.DOCUMENTO = tc.documento
@@ -261,10 +263,10 @@ public class RangoRepository {
                      AND a.TELEFONOCELULAR != ''
               ) b
              WHERE b.rango IS NOT NULL
-               AND CAST(%s AS DECIMAL(10, 2)) > 0
+               AND CAST(b.monto_filtro AS DECIMAL(10, 2)) > 0
                AND %s%s
-            """.formatted(numeroBloque, condicionesRango, condicionRangoMora,
-                columnaMontos, condicionesAdicionales, condicionFechas);
+            """.formatted(numeroBloque, columnaMontos, condicionesRango, condicionRangoMora,
+                condicionesAdicionales, condicionFechas);
     }
 
 
