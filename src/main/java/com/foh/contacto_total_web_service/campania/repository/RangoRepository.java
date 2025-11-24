@@ -184,24 +184,39 @@ public class RangoRepository {
     /**
      * Construye la consulta principal que une todas las subconsultas
      * Elimina duplicados manteniendo la fila con menor BLOQUE y mayor SLDCAPCONS
-     * Los filtros ya fueron aplicados en cada subconsulta, solo queda deduplicar
+     * Usa subconsulta correlacionada en lugar de self-join para mejor rendimiento
      */
     private String construirConsultaPrincipal(List<String> subconsultas) {
         String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
         return """
-            SELECT B1.DOCUMENTO,
-                   COALESCE(B1.TELEFONOCELULAR, B1.telefonodomicilio, B1.telefonolaboral, B1.telfreferencia1, B1.telfreferencia2) AS TELEFONO,
-                   B1.TIPI
+            SELECT todos.DOCUMENTO,
+                   COALESCE(todos.TELEFONOCELULAR, todos.telefonodomicilio, todos.telefonolaboral, todos.telfreferencia1, todos.telfreferencia2) AS TELEFONO,
+                   todos.TIPI
               FROM (
                    %s
-              ) B1
-              LEFT JOIN (
-                   %s
-              ) B2 ON B1.DOCUMENTO = B2.DOCUMENTO
-                  AND (B2.BLOQUE < B1.BLOQUE OR (B2.BLOQUE = B1.BLOQUE AND B2.SLDCAPCONS > B1.SLDCAPCONS))
-             WHERE B2.DOCUMENTO IS NULL
-             ORDER BY B1.BLOQUE, B1.SLDCAPCONS DESC;
-            """.formatted(unionSubconsultas, unionSubconsultas);
+              ) todos
+             INNER JOIN (
+                   SELECT DOCUMENTO,
+                          MIN(BLOQUE) as min_bloque
+                     FROM (
+                          %s
+                     ) sub
+                    GROUP BY DOCUMENTO
+              ) minimos ON todos.DOCUMENTO = minimos.DOCUMENTO
+                       AND todos.BLOQUE = minimos.min_bloque
+             INNER JOIN (
+                   SELECT DOCUMENTO,
+                          BLOQUE,
+                          MAX(SLDCAPCONS) as max_saldo
+                     FROM (
+                          %s
+                     ) sub2
+                    GROUP BY DOCUMENTO, BLOQUE
+              ) maximos ON todos.DOCUMENTO = maximos.DOCUMENTO
+                       AND todos.BLOQUE = maximos.BLOQUE
+                       AND todos.SLDCAPCONS = maximos.max_saldo
+             ORDER BY todos.BLOQUE, todos.SLDCAPCONS DESC;
+            """.formatted(unionSubconsultas, unionSubconsultas, unionSubconsultas);
     }
 
     /**
