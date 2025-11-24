@@ -74,11 +74,32 @@ public class RangoRepository {
         // Borrar si existe
         entityManager.createNativeQuery("DROP TABLE IF EXISTS TEMP_RANGOS_UNION").executeUpdate();
 
+        // Crear tabla con estructura explícita
+        String createTableStructure = """
+            CREATE TABLE TEMP_RANGOS_UNION (
+                BLOQUE INT,
+                DOCUMENTO VARCHAR(50),
+                TELEFONOCELULAR VARCHAR(20),
+                telefonodomicilio VARCHAR(20),
+                telefonolaboral VARCHAR(20),
+                telfreferencia1 VARCHAR(20),
+                telfreferencia2 VARCHAR(20),
+                TIPI VARCHAR(100),
+                SLDCAPCONS DECIMAL(15,2),
+                rango VARCHAR(100),
+                monto_filtro DECIMAL(15,2),
+                INDEX idx_documento (DOCUMENTO),
+                INDEX idx_bloque (BLOQUE),
+                INDEX idx_sldcapcons (SLDCAPCONS)
+            ) ENGINE=MEMORY
+            """;
+        entityManager.createNativeQuery(createTableStructure).executeUpdate();
+
+        // Insertar datos
         List<String> subconsultas = construirSubconsultas(request, documentosPromesasCaidas);
         String unionAll = String.join(" UNION ALL ", subconsultas);
-
-        String createTable = "CREATE TABLE TEMP_RANGOS_UNION ENGINE=MEMORY AS " + unionAll;
-        entityManager.createNativeQuery(createTable).executeUpdate();
+        String insertData = "INSERT INTO TEMP_RANGOS_UNION " + unionAll;
+        entityManager.createNativeQuery(insertData).executeUpdate();
     }
 
     /**
