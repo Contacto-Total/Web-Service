@@ -95,23 +95,15 @@ public class RangoRepository {
             """;
         entityManager.createNativeQuery(createTableStructure).executeUpdate();
 
-        // Insertar datos - ejecutar cada subconsulta por separado para mejor rendimiento
+        // Insertar datos
         List<String> subconsultas = construirSubconsultas(request, documentosPromesasCaidas);
-        String insertPrefix = """
+        String unionAll = String.join(" UNION ALL ", subconsultas);
+        String insertData = """
             INSERT INTO TEMP_RANGOS_UNION
             (BLOQUE, DOCUMENTO, TELEFONOCELULAR, telefonodomicilio, telefonolaboral,
              telfreferencia1, telfreferencia2, TIPI, SLDCAPCONS, rango, monto_filtro)
-            """;
-
-        int bloqueNum = 1;
-        for (String subconsulta : subconsultas) {
-            System.out.println("[RANGO REPO] Insertando bloque " + bloqueNum + "...");
-            long bloqueStart = System.currentTimeMillis();
-            String insertData = insertPrefix + subconsulta;
-            entityManager.createNativeQuery(insertData).executeUpdate();
-            System.out.println("[RANGO REPO] Bloque " + bloqueNum + " insertado - Tiempo: " + (System.currentTimeMillis() - bloqueStart) + "ms");
-            bloqueNum++;
-        }
+            """ + unionAll;
+        entityManager.createNativeQuery(insertData).executeUpdate();
     }
 
     /**
@@ -264,7 +256,6 @@ public class RangoRepository {
         // Flatten the query to avoid nested subquery issues with type inference
         // Note: condicionesRango already includes "END AS RANGO", no need to add alias
         // MySQL 5.0 doesn't allow aliases in WHERE, so use version without alias
-        // Using NOT EXISTS instead of LEFT JOIN ... IS NULL for better performance
         return """
             SELECT %d AS BLOQUE,
                    a.DOCUMENTO,
@@ -279,25 +270,19 @@ public class RangoRepository {
                    a.%s AS monto_filtro
               FROM TEMP_MERGE a
               LEFT JOIN TEMP_TIPIFICACION_MAX tc ON a.DOCUMENTO = tc.documento
+              LEFT JOIN blacklist bl ON a.DOCUMENTO = bl.DOCUMENTO
+                   AND DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN bl.FECHA_INICIO AND bl.FECHA_FIN
+              LEFT JOIN GESTION_HISTORICA gh ON a.DOCUMENTO = gh.DOCUMENTO
+                   AND gh.Resultado IN ('CANCELACION TOTAL')
+              LEFT JOIN GESTION_HISTORICA_BI ghbi ON a.TELEFONOCELULAR = ghbi.Telefono
+                   AND ghbi.Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
                %s
+               AND bl.DOCUMENTO IS NULL
+               AND gh.DOCUMENTO IS NULL
+               AND ghbi.Telefono IS NULL
                AND a.TELEFONOCELULAR != ''
                AND (%s) IS NOT NULL
                AND CAST(a.%s AS DECIMAL(10, 2)) > 0
-               AND NOT EXISTS (
-                   SELECT 1 FROM blacklist bl
-                   WHERE bl.DOCUMENTO = a.DOCUMENTO
-                   AND DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN bl.FECHA_INICIO AND bl.FECHA_FIN
-               )
-               AND NOT EXISTS (
-                   SELECT 1 FROM GESTION_HISTORICA gh
-                   WHERE gh.DOCUMENTO = a.DOCUMENTO
-                   AND gh.Resultado IN ('CANCELACION TOTAL')
-               )
-               AND NOT EXISTS (
-                   SELECT 1 FROM GESTION_HISTORICA_BI ghbi
-                   WHERE ghbi.Telefono = a.TELEFONOCELULAR
-                   AND ghbi.Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
-               )
                AND %s%s
             """.formatted(numeroBloque, condicionesRango, columnaMontos,
                 condicionRangoMora, condicionesRangoSinAlias, columnaMontos,
