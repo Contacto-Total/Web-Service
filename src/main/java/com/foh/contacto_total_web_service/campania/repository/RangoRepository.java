@@ -299,9 +299,9 @@ public class RangoRepository {
                 "'CANCELACION TOTAL', 'CANCELACION NO REPORTADAS O APLICADAS')";
         String condicionFinal = tiposPromesa;
         if (condicionDocumentos.isEmpty()) {
-            condicionFinal += " AND documento IN ('')";
+            condicionFinal += " AND a.documento IN ('')";
         } else {
-            condicionFinal += " AND documento IN (" + condicionDocumentos + ")";
+            condicionFinal += " AND a.documento IN (" + condicionDocumentos + ")";
         }
         condicionFinal += condicionPagadasHoy;
         return condicionFinal;
