@@ -31,12 +31,6 @@ public class ReporteServiceImpl implements ReporteService {
         System.out.println("========== [REPORTE SERVICE] INICIO ==========");
         long startTime = System.currentTimeMillis();
 
-        // Actualizar tabla temporal de tipificaciones antes de ejecutar queries
-        System.out.println("[REPORTE SERVICE] Actualizando TEMP_TIPIFICACION_MAX...");
-        long tipifStart = System.currentTimeMillis();
-        reporteRepository.actualizarTipificacionMax();
-        System.out.println("[REPORTE SERVICE] TEMP_TIPIFICACION_MAX actualizada - Tiempo: " + (System.currentTimeMillis() - tipifStart) + "ms");
-
         System.out.println("[REPORTE SERVICE] Obteniendo promesas caídas...");
         List<String> promesasCaidas = compromisoRepository.findPromesasCaidasWithoutColchon();
         System.out.println("[REPORTE SERVICE] Promesas caídas obtenidas: " + promesasCaidas.size() + " registros");
