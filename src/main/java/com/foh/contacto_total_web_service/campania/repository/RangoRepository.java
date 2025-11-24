@@ -98,7 +98,11 @@ public class RangoRepository {
         // Insertar datos
         List<String> subconsultas = construirSubconsultas(request, documentosPromesasCaidas);
         String unionAll = String.join(" UNION ALL ", subconsultas);
-        String insertData = "INSERT INTO TEMP_RANGOS_UNION " + unionAll;
+        String insertData = """
+            INSERT INTO TEMP_RANGOS_UNION
+            (BLOQUE, DOCUMENTO, TELEFONOCELULAR, telefonodomicilio, telefonolaboral,
+             telfreferencia1, telfreferencia2, TIPI, SLDCAPCONS, rango, monto_filtro)
+            """ + unionAll;
         entityManager.createNativeQuery(insertData).executeUpdate();
     }
 
