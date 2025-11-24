@@ -95,15 +95,23 @@ public class RangoRepository {
             """;
         entityManager.createNativeQuery(createTableStructure).executeUpdate();
 
-        // Insertar datos
+        // Insertar datos - ejecutar cada subconsulta por separado para mejor rendimiento
         List<String> subconsultas = construirSubconsultas(request, documentosPromesasCaidas);
-        String unionAll = String.join(" UNION ALL ", subconsultas);
-        String insertData = """
+        String insertPrefix = """
             INSERT INTO TEMP_RANGOS_UNION
             (BLOQUE, DOCUMENTO, TELEFONOCELULAR, telefonodomicilio, telefonolaboral,
              telfreferencia1, telfreferencia2, TIPI, SLDCAPCONS, rango, monto_filtro)
-            """ + unionAll;
-        entityManager.createNativeQuery(insertData).executeUpdate();
+            """;
+
+        int bloqueNum = 1;
+        for (String subconsulta : subconsultas) {
+            System.out.println("[RANGO REPO] Insertando bloque " + bloqueNum + "...");
+            long bloqueStart = System.currentTimeMillis();
+            String insertData = insertPrefix + subconsulta;
+            entityManager.createNativeQuery(insertData).executeUpdate();
+            System.out.println("[RANGO REPO] Bloque " + bloqueNum + " insertado - Tiempo: " + (System.currentTimeMillis() - bloqueStart) + "ms");
+            bloqueNum++;
+        }
     }
 
     /**
