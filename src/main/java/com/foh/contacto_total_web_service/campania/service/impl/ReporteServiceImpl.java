@@ -28,6 +28,9 @@ public class ReporteServiceImpl implements ReporteService {
 
     @Override
     public File getReporteByRangesAndGenerateFile(GetFiltersToGenerateFileRequest getFiltersToGenerateFileRequest) {
+        // Actualizar tabla temporal de tipificaciones antes de ejecutar queries
+        reporteRepository.actualizarTipificacionMax();
+
         List<String> promesasCaidas = compromisoRepository.findPromesasCaidasWithoutColchon();
         List<Object[]> resultados = reporteRepository.getReporteByRangos(getFiltersToGenerateFileRequest, promesasCaidas);
 

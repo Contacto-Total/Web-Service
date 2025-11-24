@@ -257,17 +257,16 @@ public class ReporteRepository {
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
         subconsulta.append("SELECT *, '").append(tipoRango).append("' AS RANGO_TIPO FROM (")
-                .append("SELECT BUSCAR_MAYOR_TIP(documento) TIPI, a.*, ")
+                .append("SELECT COALESCE(tc.TIPI, 'SIN TIPIFICACION') AS TIPI, a.*, ")
                 .append(condicionesRango)
                 .append(" FROM TEMP_MERGE a ")
-                .append("WHERE DOCUMENTO NOT IN (")
-                .append("SELECT DOCUMENTO FROM blacklist ")
-                .append("WHERE DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN FECHA_INICIO AND FECHA_FIN")
-                .append(") ")
-                .append("AND DOCUMENTO NOT IN (")
-                .append("SELECT DISTINCT DOCUMENTO FROM GESTION_HISTORICA ")
-                .append("WHERE Resultado IN ('CANCELACION TOTAL')")
-                .append(") ");
+                .append("LEFT JOIN TEMP_TIPIFICACION_MAX tc ON a.DOCUMENTO = tc.documento ")
+                .append("LEFT JOIN blacklist bl ON a.DOCUMENTO = bl.DOCUMENTO ")
+                .append("  AND DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN bl.FECHA_INICIO AND bl.FECHA_FIN ")
+                .append("LEFT JOIN GESTION_HISTORICA gh ON a.DOCUMENTO = gh.DOCUMENTO ")
+                .append("  AND gh.Resultado IN ('CANCELACION TOTAL') ")
+                .append("WHERE bl.DOCUMENTO IS NULL ")
+                .append("AND gh.DOCUMENTO IS NULL ");
 
         // Agregar condición de rango mora si existe
         if (!condicionRangoMora.isEmpty()) {
@@ -310,16 +309,15 @@ public class ReporteRepository {
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
         subconsulta.append("SELECT *, '").append(TIPO_NO_CONTACTADO).append("' AS RANGO_TIPO FROM (")
-                .append("SELECT BUSCAR_MAYOR_TIP(documento) TIPI, a.*, ").append(condicionesRango)
+                .append("SELECT COALESCE(tc.TIPI, 'NO CONTESTA') AS TIPI, a.*, ").append(condicionesRango)
                 .append(" FROM TEMP_MERGE a ")
-                .append("WHERE DOCUMENTO NOT IN (")
-                .append("SELECT DOCUMENTO FROM blacklist ")
-                .append("WHERE DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN FECHA_INICIO AND FECHA_FIN")
-                .append(") ")
-                .append("AND DOCUMENTO NOT IN (")
-                .append("SELECT DISTINCT DOCUMENTO FROM GESTION_HISTORICA ")
-                .append("WHERE Resultado IN ('CANCELACION TOTAL')")
-                .append(") ");
+                .append("LEFT JOIN TEMP_TIPIFICACION_MAX tc ON a.DOCUMENTO = tc.documento ")
+                .append("LEFT JOIN blacklist bl ON a.DOCUMENTO = bl.DOCUMENTO ")
+                .append("  AND DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN bl.FECHA_INICIO AND bl.FECHA_FIN ")
+                .append("LEFT JOIN GESTION_HISTORICA gh ON a.DOCUMENTO = gh.DOCUMENTO ")
+                .append("  AND gh.Resultado IN ('CANCELACION TOTAL') ")
+                .append("WHERE bl.DOCUMENTO IS NULL ")
+                .append("AND gh.DOCUMENTO IS NULL ");
 
         // Agregar condición de rango mora si existe
         if (!condicionRangoMora.isEmpty()) {
@@ -473,5 +471,17 @@ public class ReporteRepository {
         String sql = "SELECT DISTINCT FECVENCIMIENTO FROM TEMP_MERGE WHERE RANGOMORAPROYAG='Tramo 3' ORDER BY FECVENCIMIENTO";
         Query query = entityManager.createNativeQuery(sql);
         return query.getResultList();
+    }
+
+    /**
+     * Ejecuta el stored procedure que actualiza la tabla temporal TEMP_TIPIFICACION_MAX
+     * con las tipificaciones de mayor peso por documento.
+     * Debe llamarse al inicio de cada generación de campaña.
+     */
+    public void actualizarTipificacionMax() {
+        System.out.println("========== ACTUALIZANDO TEMP_TIPIFICACION_MAX ==========");
+        Query query = entityManager.createNativeQuery("CALL ACTUALIZAR_TIPIFICACION_MAX()");
+        query.executeUpdate();
+        System.out.println("========== TEMP_TIPIFICACION_MAX ACTUALIZADA ==========");
     }
 }

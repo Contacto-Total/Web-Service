@@ -156,10 +156,11 @@ public class RangoRepository {
         return """
             SELECT %d AS BLOQUE, b.*
               FROM (
-                   SELECT BUSCAR_MAYOR_TIP(documento) AS TIPI,
+                   SELECT COALESCE(tc.TIPI, 'SIN TIPIFICACION') AS TIPI,
                           a.*,
                           %s
                      FROM TEMP_MERGE a
+                     LEFT JOIN TEMP_TIPIFICACION_MAX tc ON a.DOCUMENTO = tc.documento
                     %s
               ) b
              WHERE b.rango IS NOT NULL
@@ -172,39 +173,39 @@ public class RangoRepository {
     /**
      * Construye la consulta principal que une todas las subconsultas
      * Elimina duplicados manteniendo la fila con menor BLOQUE y mayor SLDCAPCONS
+     * Optimizada: usa ROW_NUMBER() simulado con variables en MySQL 5.0 en lugar de self-join
      */
     private String construirConsultaPrincipal(List<String> subconsultas) {
         String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
         return """
-            SELECT B1.DOCUMENTO,
-                   COALESCE(B1.TELEFONOCELULAR, B1.telefonodomicilio, B1.telefonolaboral, B1.telfreferencia1, B1.telfreferencia2) AS TELEFONO,
-                   B1.TIPI
+            SELECT ranked.DOCUMENTO,
+                   COALESCE(ranked.TELEFONOCELULAR, ranked.telefonodomicilio, ranked.telefonolaboral, ranked.telfreferencia1, ranked.telfreferencia2) AS TELEFONO,
+                   ranked.TIPI
               FROM (
-                   %s
-              ) B1
-              LEFT JOIN (
-                   %s
-              ) B2 ON B1.DOCUMENTO = B2.DOCUMENTO
-                  AND (B2.BLOQUE < B1.BLOQUE OR (B2.BLOQUE = B1.BLOQUE AND B2.SLDCAPCONS > B1.SLDCAPCONS))
-             WHERE B2.DOCUMENTO IS NULL
-               AND B1.DOCUMENTO NOT IN (
-                   SELECT DOCUMENTO
-                     FROM blacklist
-                    WHERE DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN FECHA_INICIO AND FECHA_FIN
-               )
-               AND B1.TELEFONOCELULAR NOT IN (
-                   SELECT DISTINCT Telefono
-                     FROM GESTION_HISTORICA_BI
-                    WHERE Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
-               )
-               AND B1.DOCUMENTO NOT IN (
-                   SELECT DISTINCT DOCUMENTO
-                     FROM GESTION_HISTORICA
-                    WHERE Resultado IN ('CANCELACION TOTAL')
-               )
-               AND B1.TELEFONOCELULAR != ''
-             ORDER BY B1.BLOQUE, B1.SLDCAPCONS DESC;
-            """.formatted(unionSubconsultas, unionSubconsultas);
+                   SELECT B1.*,
+                          @rn := IF(@prev_doc = B1.DOCUMENTO, @rn + 1, 1) AS rn,
+                          @prev_doc := B1.DOCUMENTO
+                     FROM (
+                          SELECT * FROM (
+                               %s
+                          ) sub
+                          ORDER BY sub.DOCUMENTO, sub.BLOQUE, sub.SLDCAPCONS DESC
+                     ) B1
+                     CROSS JOIN (SELECT @rn := 0, @prev_doc := NULL) vars
+              ) ranked
+              LEFT JOIN blacklist bl ON ranked.DOCUMENTO = bl.DOCUMENTO
+                   AND DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN bl.FECHA_INICIO AND bl.FECHA_FIN
+              LEFT JOIN GESTION_HISTORICA_BI ghbi ON ranked.TELEFONOCELULAR = ghbi.Telefono
+                   AND ghbi.Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
+              LEFT JOIN GESTION_HISTORICA gh ON ranked.DOCUMENTO = gh.DOCUMENTO
+                   AND gh.Resultado IN ('CANCELACION TOTAL')
+             WHERE ranked.rn = 1
+               AND bl.DOCUMENTO IS NULL
+               AND ghbi.Telefono IS NULL
+               AND gh.DOCUMENTO IS NULL
+               AND ranked.TELEFONOCELULAR != ''
+             ORDER BY ranked.BLOQUE, ranked.SLDCAPCONS DESC;
+            """.formatted(unionSubconsultas);
     }
 
     /**
