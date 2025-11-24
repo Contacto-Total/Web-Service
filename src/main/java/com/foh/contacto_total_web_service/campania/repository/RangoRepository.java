@@ -6,7 +6,6 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -33,7 +32,6 @@ public class RangoRepository {
      * @param documentosPromesasCaidas Lista de documentos con promesas caídas
      * @return Lista de resultados con documento, teléfono y tipo de contacto
      */
-    @Transactional
     public List<Object[]> findByRangosAndTipoContacto(
             GetFiltersToGenerateFileRequest request,
             List<String> documentosPromesasCaidas
@@ -42,108 +40,15 @@ public class RangoRepository {
         System.out.println("FilterType recibido: " + request.getFilterType());
         System.out.println("Campaign Name: " + request.getCampaignName());
 
-        // 1. Crear tabla temporal con UNION ALL (una sola vez)
-        System.out.println("[RANGO REPO] Creando tabla temporal con UNION ALL...");
-        long tempTableStart = System.currentTimeMillis();
-        crearTablaTemporal(request, documentosPromesasCaidas);
-        System.out.println("[RANGO REPO] Tabla temporal creada - Tiempo: " + (System.currentTimeMillis() - tempTableStart) + "ms");
-
-        // 2. Query final usando la tabla temporal
-        System.out.println("[RANGO REPO] Ejecutando query de deduplicación...");
-        long dedupStart = System.currentTimeMillis();
-        String consultaFinal = construirConsultaFinalConTemporal();
+        List<String> subconsultas = construirSubconsultas(request, documentosPromesasCaidas);
+        String consultaFinal = construirConsultaPrincipal(subconsultas);
 
         System.out.println("========== CONSULTA FINAL RANGOS ==========");
         System.out.println(consultaFinal);
         System.out.println("========== FIN CONSULTA RANGOS ==========");
 
         Query query = entityManager.createNativeQuery(consultaFinal);
-        List<Object[]> resultado = query.getResultList();
-        System.out.println("[RANGO REPO] Deduplicación completada: " + resultado.size() + " filas - Tiempo: " + (System.currentTimeMillis() - dedupStart) + "ms");
-
-        // 3. Limpiar tabla temporal
-        limpiarTablaTemporal();
-
-        return resultado;
-    }
-
-    /**
-     * Crea tabla temporal TEMP_RANGOS_UNION con el resultado del UNION ALL
-     */
-    private void crearTablaTemporal(GetFiltersToGenerateFileRequest request, List<String> documentosPromesasCaidas) {
-        // Borrar si existe
-        entityManager.createNativeQuery("DROP TABLE IF EXISTS TEMP_RANGOS_UNION").executeUpdate();
-
-        // Crear tabla con estructura explícita
-        String createTableStructure = """
-            CREATE TABLE TEMP_RANGOS_UNION (
-                BLOQUE INT,
-                DOCUMENTO VARCHAR(50),
-                TELEFONOCELULAR VARCHAR(20),
-                telefonodomicilio VARCHAR(20),
-                telefonolaboral VARCHAR(20),
-                telfreferencia1 VARCHAR(20),
-                telfreferencia2 VARCHAR(20),
-                TIPI VARCHAR(100),
-                SLDCAPCONS DECIMAL(15,2),
-                rango VARCHAR(100),
-                monto_filtro DECIMAL(15,2),
-                INDEX idx_documento (DOCUMENTO),
-                INDEX idx_bloque (BLOQUE),
-                INDEX idx_sldcapcons (SLDCAPCONS)
-            ) ENGINE=MEMORY
-            """;
-        entityManager.createNativeQuery(createTableStructure).executeUpdate();
-
-        // Insertar datos
-        List<String> subconsultas = construirSubconsultas(request, documentosPromesasCaidas);
-        String unionAll = String.join(" UNION ALL ", subconsultas);
-        String insertData = """
-            INSERT INTO TEMP_RANGOS_UNION
-            (BLOQUE, DOCUMENTO, TELEFONOCELULAR, telefonodomicilio, telefonolaboral,
-             telfreferencia1, telfreferencia2, TIPI, SLDCAPCONS, rango, monto_filtro)
-            """ + unionAll;
-        entityManager.createNativeQuery(insertData).executeUpdate();
-    }
-
-    /**
-     * Query final que usa TEMP_RANGOS_UNION en lugar de repetir UNION ALL
-     */
-    private String construirConsultaFinalConTemporal() {
-        return """
-            SELECT todos.DOCUMENTO,
-                   COALESCE(todos.TELEFONOCELULAR, todos.telefonodomicilio, todos.telefonolaboral, todos.telfreferencia1, todos.telfreferencia2) AS TELEFONO,
-                   todos.TIPI
-              FROM TEMP_RANGOS_UNION todos
-             INNER JOIN (
-                   SELECT DOCUMENTO,
-                          MIN(BLOQUE) as min_bloque
-                     FROM TEMP_RANGOS_UNION
-                    GROUP BY DOCUMENTO
-              ) minimos ON todos.DOCUMENTO = minimos.DOCUMENTO
-                       AND todos.BLOQUE = minimos.min_bloque
-             INNER JOIN (
-                   SELECT DOCUMENTO,
-                          BLOQUE,
-                          MAX(SLDCAPCONS) as max_saldo
-                     FROM TEMP_RANGOS_UNION
-                    GROUP BY DOCUMENTO, BLOQUE
-              ) maximos ON todos.DOCUMENTO = maximos.DOCUMENTO
-                       AND todos.BLOQUE = maximos.BLOQUE
-                       AND todos.SLDCAPCONS = maximos.max_saldo
-             ORDER BY todos.BLOQUE, todos.SLDCAPCONS DESC;
-            """;
-    }
-
-    /**
-     * Limpia la tabla temporal
-     */
-    private void limpiarTablaTemporal() {
-        try {
-            entityManager.createNativeQuery("DROP TABLE IF EXISTS TEMP_RANGOS_UNION").executeUpdate();
-        } catch (Exception e) {
-            System.err.println("Error al limpiar tabla temporal: " + e.getMessage());
-        }
+        return query.getResultList();
     }
 
     /**
@@ -233,8 +138,6 @@ public class RangoRepository {
 
     /**
      * Construye una subconsulta individual para un tipo específico de contacto
-     * Aplica filtros de blacklist y GESTION_HISTORICA ANTES del UNION ALL
-     * Solo selecciona las columnas necesarias para evitar conflictos de tipo
      */
     private String construirSubconsulta(
             int numeroBloque,
@@ -250,45 +153,48 @@ public class RangoRepository {
                 rangos, tipoRango, columnaMontos);
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
-        // Strip "AS RANGO" from condicionesRango for use in WHERE clause (MySQL 5.0 limitation)
-        String condicionesRangoSinAlias = condicionesRango.replace(" AS RANGO", "");
-
-        // Flatten the query to avoid nested subquery issues with type inference
-        // Note: condicionesRango already includes "END AS RANGO", no need to add alias
-        // MySQL 5.0 doesn't allow aliases in WHERE, so use version without alias
         return """
-            SELECT %d AS BLOQUE,
-                   a.DOCUMENTO,
-                   a.TELEFONOCELULAR,
-                   a.telefonodomicilio,
-                   a.telefonolaboral,
-                   a.telfreferencia1,
-                   a.telfreferencia2,
-                   COALESCE(tc.TIPI, 'SIN TIPIFICACION') AS TIPI,
-                   a.SLDCAPCONS,
-                   %s,
-                   a.%s AS monto_filtro
-              FROM TEMP_MERGE a
-              LEFT JOIN TEMP_TIPIFICACION_MAX tc ON a.DOCUMENTO = tc.documento
-              LEFT JOIN blacklist bl ON a.DOCUMENTO = bl.DOCUMENTO
-                   AND DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN bl.FECHA_INICIO AND bl.FECHA_FIN
-              LEFT JOIN GESTION_HISTORICA gh ON a.DOCUMENTO = gh.DOCUMENTO
-                   AND gh.Resultado IN ('CANCELACION TOTAL')
-              LEFT JOIN GESTION_HISTORICA_BI ghbi ON a.TELEFONOCELULAR = ghbi.Telefono
-                   AND ghbi.Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
-               %s
-               AND bl.DOCUMENTO IS NULL
-               AND gh.DOCUMENTO IS NULL
-               AND ghbi.Telefono IS NULL
-               AND a.TELEFONOCELULAR != ''
-               AND (%s) IS NOT NULL
-               AND CAST(a.%s AS DECIMAL(10, 2)) > 0
+            SELECT %d AS BLOQUE, b.*
+              FROM (
+                   SELECT BUSCAR_MAYOR_TIP(documento) AS TIPI,
+                          a.*,
+                          %s
+                     FROM TEMP_MERGE a
+                    %s
+              ) b
+             WHERE b.rango IS NOT NULL
+               AND CAST(%s AS DECIMAL(10, 2)) > 0
                AND %s%s
-            """.formatted(numeroBloque, condicionesRango, columnaMontos,
-                condicionRangoMora, condicionesRangoSinAlias, columnaMontos,
-                condicionesAdicionales, condicionFechas);
+            """.formatted(numeroBloque, condicionesRango, condicionRangoMora,
+                columnaMontos, condicionesAdicionales, condicionFechas);
     }
 
+    /**
+     * Construye la consulta principal que une todas las subconsultas
+     */
+    private String construirConsultaPrincipal(List<String> subconsultas) {
+        String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
+        return """
+            SELECT DOCUMENTO,
+                   COALESCE(TELEFONOCELULAR, telefonodomicilio, telefonolaboral, telfreferencia1, telfreferencia2),
+                   TIPI
+              FROM (
+                   %s
+              ) B
+             WHERE DOCUMENTO NOT IN (
+                   SELECT DOCUMENTO
+                     FROM blacklist
+                    WHERE DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN FECHA_INICIO AND FECHA_FIN
+             )
+               AND TELEFONOCELULAR NOT IN (
+                   SELECT DISTINCT Telefono
+                     FROM GESTION_HISTORICA_BI
+                    WHERE Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
+               )
+               AND TELEFONOCELULAR != ''
+             ORDER BY BLOQUE, SLDCAPCONS DESC;
+            """.formatted(unionSubconsultas);
+    }
 
     /**
      * Construye las condiciones específicas para promesas rotas
