@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Carta de No Adeudo</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 40px 60px;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: white;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .document {
+            margin: 0 auto;
+            padding: 0;
+            background: white;
+        }
+        .header {
+            padding: 10px 0 20px 0;
+            position: relative;
+            width: 100%;
+        }
+        .logo-section {
+            width: 100%;
+            display: table;
+            margin-bottom: 30px;
+        }
+        .logo-left {
+            display: table-cell;
+            width: 50%;
+            text-align: left;
+            vertical-align: top;
+        }
+        .logo-right {
+            display: table-cell;
+            width: 50%;
+            text-align: right;
+            vertical-align: top;
+        }
+        .logo-section img {
+            height: 35px;
+        }
+        .titulo-carta {
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 30px 0 40px 0;
+            text-decoration: underline;
+        }
+        .datos-titular {
+            margin: 30px 0;
+        }
+        .dato-row {
+            display: table;
+            width: 100%;
+            margin-bottom: 8px;
+        }
+        .dato-row input,
+        .dato-row span {
+            display: table-cell;
+            vertical-align: middle;
+        }
+        .nombre-input {
+            width: 70%;
+            font-weight: bold;
+            border: none;
+            font-size: 12px;
+            padding: 0;
+            margin-right: 10px;
+        }
+        .dni-label {
+            font-weight: 400;
+            margin-left: auto;
+            padding-right: 10px;
+        }
+        .dni-input {
+            width: 80px;
+            text-align: right;
+            font-weight: bold;
+            border: none;
+            font-size: 12px;
+            padding: 0;
+        }
+        .cuenta-label {
+            font-weight: 400;
+        }
+        .cuenta-input {
+            font-weight: bold;
+            border: none;
+            font-size: 12px;
+            padding: 0;
+            margin-left: 5px;
+        }
+        .contenido {
+            margin: 30px 0;
+            text-align: justify;
+        }
+        .contenido p {
+            margin: 15px 0;
+        }
+        .fecha-display {
+            font-weight: bold;
+        }
+        .despedida {
+            margin-top: 40px;
+            text-align: center;
+        }
+        .firma-section {
+            margin-top: 60px;
+            text-align: center;
+        }
+        .firma-section img {
+            width: 120px;
+            height: auto;
+        }
+        .firma-nombre {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        .firma-cargo {
+            font-weight: normal;
+        }
+        .footer-datos {
+            margin-top: 50px;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            font-family: 'Arial Narrow', Arial, sans-serif;
+        }
+        .footer-datos p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+<div class="document">
+    <!-- Header con dos logos -->
+    <div class="header">
+        <div class="logo-section">
+            <div class="logo-left">
+                <img src="classpath:/static/images/nsoluciones/logo.png" alt="Logo NSoluciones" />
+            </div>
+            <div class="logo-right">
+                <img src="classpath:/static/images/nsoluciones/logo2.png" alt="Logo NS" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Título -->
+    <div class="titulo-carta">
+        CARTA DE NO ADEUDO
+    </div>
+
+    <!-- Datos del titular -->
+    <div class="datos-titular">
+        <div class="dato-row">
+            <input type="text" class="nombre-input" th:value="${nombreCompleto}" readonly />
+            <span class="dni-label">DNI:</span>
+            <input type="text" class="dni-input" th:value="${dni}" readonly />
+        </div>
+        <div class="dato-row">
+            <span class="cuenta-label">Titular de la cuenta Nro.</span>
+            <input type="text" class="cuenta-input" th:value="${numeroCuenta}" readonly />
+        </div>
+    </div>
+
+    <!-- Contenido principal -->
+    <div class="contenido">
+        <p>
+            Por medio de la presente hacemos de su conocimiento que usted no presenta saldo pendiente de pago de la tarjeta de crédito Oh!
+        </p>
+        <p>
+            La presente se expide a solicitud del interesado para los fines que estime conveniente, en la ciudad de Lima, a los
+            <span class="fecha-display" th:text="${fechaActual}"></span>
+        </p>
+        <p>
+            Y la fecha de cancelación de esta(s) obligación(es) fue el día
+            <span class="fecha-display" th:text="${fechaCancelacion}"></span>
+        </p>
+    </div>
+
+    <!-- Despedida -->
+    <div class="despedida">
+        Atentamente,
+    </div>
+
+    <!-- Sección de firma -->
+    <div class="firma-section">
+        <img src="classpath:/static/images/nsoluciones/firma.png" alt="Firma" />
+        <div class="firma-nombre">Emily Dayana Saenz Martinez</div>
+        <div class="firma-cargo">Administración</div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer-datos">
+        <p>Calle Morelli 217, Int 205 San Borja – Lima – Perú</p>
+        <p>RUC Financiera: <span th:text="${rucFinanciera}"></span> / RUC NSoluciones: <span th:text="${rucNsoluciones}"></span></p>
+        <p>Contacto: +51 915 326 798</p>
+    </div>
+</div>
+</body>
+</html>

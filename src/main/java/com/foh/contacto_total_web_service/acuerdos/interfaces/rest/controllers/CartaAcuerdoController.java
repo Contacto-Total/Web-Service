@@ -1,13 +1,17 @@
 package com.foh.contacto_total_web_service.acuerdos.interfaces.rest.controllers;
 
 import com.foh.contacto_total_web_service.acuerdos.domain.model.command.CreateCartaAcuerdoCommand;
+import com.foh.contacto_total_web_service.acuerdos.domain.model.command.CreateCartaNoAdeudoCommand;
 import com.foh.contacto_total_web_service.acuerdos.domain.model.queries.GetDatosByClienteQuery;
 import com.foh.contacto_total_web_service.acuerdos.domain.services.CartaAcuerdoCommandService;
 import com.foh.contacto_total_web_service.acuerdos.domain.services.CartaAcuerdoQueryService;
+import com.foh.contacto_total_web_service.acuerdos.domain.services.CartaNoAdeudoCommandService;
 import com.foh.contacto_total_web_service.acuerdos.infrastructure.persistence.jpa.repositories.CartaAcuerdoRepository;
 import com.foh.contacto_total_web_service.acuerdos.interfaces.rest.resources.CreateCartaAcuerdoResource;
+import com.foh.contacto_total_web_service.acuerdos.interfaces.rest.resources.CreateCartaNoAdeudoResource;
 import com.foh.contacto_total_web_service.acuerdos.interfaces.rest.resources.DatosAcuerdoResource;
 import com.foh.contacto_total_web_service.acuerdos.interfaces.rest.transform.CreateCartaAcuerdoCommandFromResourceAssembler;
+import com.foh.contacto_total_web_service.acuerdos.interfaces.rest.transform.CreateCartaNoAdeudoCommandFromResourceAssembler;
 import com.foh.contacto_total_web_service.shared.interfaces.rest.resources.ErrorResponseResource;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -42,6 +46,9 @@ public class CartaAcuerdoController {
 
     @Autowired
     private CartaAcuerdoRepository cartaAcuerdoRepository;
+
+    @Autowired
+    private CartaNoAdeudoCommandService cartaNoAdeudoCommandService;
 
     @Operation(
             summary = "Obtener datos del cliente",
@@ -119,6 +126,43 @@ public class CartaAcuerdoController {
                     .body(new ErrorResponseResource(e.getMessage(), "DATOS_INVALIDOS"));
         } catch (Exception e) {
             LOGGER.error("Error al generar carta de acuerdo", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponseResource("Error al generar la carta", "ERROR_GENERAR_CARTA"));
+        }
+    }
+
+    @Operation(
+            summary = "Generar carta de no adeudo",
+            description = "Genera un archivo PDF con los datos de la carta de no adeudo del cliente."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Carta generada correctamente",
+                    content = @Content(mediaType = "application/pdf")),
+            @ApiResponse(responseCode = "400", description = "Datos inválidos",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseResource.class))),
+            @ApiResponse(responseCode = "500", description = "Error interno del servidor",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseResource.class)))
+    })
+    @PostMapping(value = "/carta-no-adeudo", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<?> generarCartaNoAdeudo(@Valid @RequestBody CreateCartaNoAdeudoResource resource) {
+        try {
+            LOGGER.info("Generando carta de no adeudo para entidad: {}, DNI: {}", resource.entidad(), resource.dni());
+
+            var command = CreateCartaNoAdeudoCommandFromResourceAssembler.toCommandFromResource(resource);
+            byte[] pdfBytes = cartaNoAdeudoCommandService.handle(command);
+
+            LOGGER.info("Carta de no adeudo generada exitosamente para entidad: {}", resource.entidad());
+
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"carta_no_adeudo.pdf\"")
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .body(pdfBytes);
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponseResource(e.getMessage(), "DATOS_INVALIDOS"));
+        } catch (Exception e) {
+            LOGGER.error("Error al generar carta de no adeudo", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponseResource("Error al generar la carta", "ERROR_GENERAR_CARTA"));
         }
