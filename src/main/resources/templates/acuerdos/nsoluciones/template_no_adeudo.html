@@ -90,7 +90,6 @@
         }
         .cuenta-label {
             font-weight: 400;
-            color: #1a5490;
         }
         .cuenta-texto {
             font-weight: bold;
@@ -131,7 +130,7 @@
             font-size: 14px;
         }
         .footer-datos {
-            margin-top: 40px;
+            margin-top: 120px;
             text-align: center;
             font-size: 14px;
             color: #4a5568;
@@ -174,23 +173,16 @@
         </div>
     </div>
 
-    <!-- Introducción -->
-    <p style="margin: 20px 0; font-size: 14px;">
-        Mediante la presente dejamos constancia que:
-    </p>
-
     <!-- Contenido principal -->
     <div class="contenido">
         <p>
-            Originada(s) en <strong>FINANCIERA OH!</strong> S.A, con RUC <strong><span th:text="${rucFinanciera}"></span></strong>, cedido(s) a favor de
-            <strong>NSOLUCIONES CONSULTING S.A.C.</strong> con RUC <strong><span th:text="${rucNsoluciones}"></span></strong>, mediante contrato de
-            trasferencia de cartera crediticia en la modalidad de cesión de derechos, quien a la fecha es
-            el actual acreedor, no mantiene deuda o saldo deudor en nuestra empresa sobre el(los)
-            crédito(s) antes mencionado(s), registrándose en situación de <strong>CANCELADO</strong>.
+            Por medio de la presente hacemos de su conocimiento que usted no presenta saldo pendiente de pago de la tarjeta de crédito Oh!
         </p>
         <p>
-            Y la fecha de cancelación de esta(s) obligación(es) fue el día
-            <span class="fecha-display" th:text="${fechaCancelacion}"></span>.
+            La presente se expide a solicitud del interesado para los fines que estime conveniente, en la ciudad de Lima, a los <span class="fecha-display" th:text="${fechaActual}"></span>
+        </p>
+        <p>
+            Y la fecha de cancelación de esta(s) obligación(es) fue el día <span class="fecha-display" th:text="${fechaCancelacion}"></span>
         </p>
     </div>
 
@@ -209,7 +201,6 @@
     <!-- Footer -->
     <div class="footer-datos">
         <p>Calle Morelli 217, Int 205 San Borja – Lima – Perú</p>
-        <p>RUC Financiera: <span th:text="${rucFinanciera}"></span> / RUC NSoluciones: <span th:text="${rucNsoluciones}"></span></p>
         <p>Contacto: +51 915 326 798</p>
     </div>
 </div>
