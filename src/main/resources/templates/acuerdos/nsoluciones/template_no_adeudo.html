@@ -62,17 +62,13 @@
             width: 100%;
             margin-bottom: 8px;
         }
-        .dato-row input,
         .dato-row span {
             display: table-cell;
             vertical-align: middle;
         }
-        .nombre-input {
-            width: 70%;
+        .nombre-texto {
             font-weight: bold;
-            border: none;
             font-size: 12px;
-            padding: 0;
             margin-right: 10px;
         }
         .dni-label {
@@ -80,22 +76,17 @@
             margin-left: auto;
             padding-right: 10px;
         }
-        .dni-input {
-            width: 80px;
+        .dni-texto {
             text-align: right;
             font-weight: bold;
-            border: none;
             font-size: 12px;
-            padding: 0;
         }
         .cuenta-label {
             font-weight: 400;
         }
-        .cuenta-input {
+        .cuenta-texto {
             font-weight: bold;
-            border: none;
             font-size: 12px;
-            padding: 0;
             margin-left: 5px;
         }
         .contenido {
@@ -161,13 +152,13 @@
     <!-- Datos del titular -->
     <div class="datos-titular">
         <div class="dato-row">
-            <input type="text" class="nombre-input" th:value="${nombreCompleto}" readonly />
+            <span class="nombre-texto" th:text="${nombreCompleto}"></span>
             <span class="dni-label">DNI:</span>
-            <input type="text" class="dni-input" th:value="${dni}" readonly />
+            <span class="dni-texto" th:text="${dni}"></span>
         </div>
         <div class="dato-row">
             <span class="cuenta-label">Titular de la cuenta Nro.</span>
-            <input type="text" class="cuenta-input" th:value="${numeroCuenta}" readonly />
+            <span class="cuenta-texto" th:text="${numeroCuenta}"></span>
         </div>
     </div>
 
