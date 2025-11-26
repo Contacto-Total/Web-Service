@@ -76,10 +76,13 @@
             font-size: 14px;
             text-align: right;
             width: auto;
+            padding-right: 5px;
         }
         .dni-texto {
             font-weight: bold;
             font-size: 14px;
+            text-align: right;
+            width: auto;
         }
         .segunda-linea {
             margin-bottom: 8px;
@@ -166,7 +169,8 @@
     <div class="datos-titular">
         <div class="primera-linea">
             <span class="nombre-texto" th:text="${nombreCompleto}"></span>
-            <span class="dni-label">DNI: <span class="dni-texto" th:text="${dni}"></span></span>
+            <span class="dni-label">DNI:</span>
+            <span class="dni-texto" th:text="${dni}"></span>
         </div>
         <div class="segunda-linea">
             <span class="cuenta-label">Titular de la cuenta Nro.</span>
