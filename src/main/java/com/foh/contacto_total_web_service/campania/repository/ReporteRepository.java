@@ -257,7 +257,7 @@ public class ReporteRepository {
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
         subconsulta.append("SELECT *, '").append(tipoRango).append("' AS RANGO_TIPO FROM (")
-                .append("SELECT BUSCAR_MAYOR_TIP(documento) TIPI, a.*, ")
+                .append("SELECT BUSCAR_MAYOR_TIP_V2(documento) TIPI, a.*, ")
                 .append(condicionesRango)
                 .append(" FROM TEMP_MERGE a ")
                 .append("WHERE DOCUMENTO NOT IN (")
@@ -310,7 +310,7 @@ public class ReporteRepository {
         String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
         subconsulta.append("SELECT *, '").append(TIPO_NO_CONTACTADO).append("' AS RANGO_TIPO FROM (")
-                .append("SELECT BUSCAR_MAYOR_TIP(documento) TIPI, a.*, ").append(condicionesRango)
+                .append("SELECT BUSCAR_MAYOR_TIP_V2(documento) TIPI, a.*, ").append(condicionesRango)
                 .append(" FROM TEMP_MERGE a ")
                 .append("WHERE DOCUMENTO NOT IN (")
                 .append("SELECT DOCUMENTO FROM blacklist ")
