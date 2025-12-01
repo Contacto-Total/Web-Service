@@ -117,8 +117,8 @@ public class RangoRepository {
         // Subconsulta para no contactados
         if (tieneElementos(request.getNotContactedRanges())) {
             String condicionesNoContactado =
-                    "TIPI IN ('MSJ VOZ - SMS - WSP - BAJO PUERTA', 'NO CONTESTA', 'APAGADO', " +
-                            "'EQUIVOCADO', 'FUERA DE SERVICIO - NO EXISTE') OR TIPI IS NULL";
+                    "(TIPI IN ('MSJ VOZ - SMS - WSP - BAJO PUERTA', 'NO CONTESTA', 'APAGADO', " +
+                            "'EQUIVOCADO', 'FUERA DE SERVICIO - NO EXISTE') OR TIPI IS NULL)";
             String subconsulta = construirSubconsulta(
                     4, // bloque
                     request.getNotContactedRanges(),
