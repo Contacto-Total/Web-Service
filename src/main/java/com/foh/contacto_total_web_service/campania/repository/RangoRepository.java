@@ -156,7 +156,7 @@ public class RangoRepository {
         return """
             SELECT %d AS BLOQUE, b.*
               FROM (
-                   SELECT BUSCAR_MAYOR_TIP_V2(documento) AS TIPI,
+                   SELECT BUSCAR_MAYOR_TIP_V3(documento) AS TIPI,
                           a.*,
                           %s
                      FROM TEMP_MERGE a
