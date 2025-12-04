@@ -40,8 +40,9 @@ public class RangoRepository {
         System.out.println("FilterType recibido: " + request.getFilterType());
         System.out.println("Campaign Name: " + request.getCampaignName());
 
-        List<String> subconsultas = construirSubconsultas(request, documentosPromesasCaidas);
-        String consultaFinal = construirConsultaPrincipal(subconsultas);
+        String columnaFiltro = obtenerColumnaFiltro(request.getFilterType());
+        List<String> subconsultas = construirSubconsultas(request, documentosPromesasCaidas, columnaFiltro);
+        String consultaFinal = construirConsultaPrincipal(subconsultas, columnaFiltro);
 
         System.out.println("========== CONSULTA FINAL RANGOS ==========");
         System.out.println(consultaFinal);
@@ -56,14 +57,14 @@ public class RangoRepository {
      */
     private List<String> construirSubconsultas(
             GetFiltersToGenerateFileRequest request,
-            List<String> documentosPromesasCaidas
+            List<String> documentosPromesasCaidas,
+            String columnaFiltro
     ) {
         List<String> subconsultas = new ArrayList<>();
         String rangoMoraProyectado = request.getCampaignName();
         String condicionFechas = construirCondicionFechas(request.getDueDates());
         String condicionContenido = construirCondicionContenido(request.getCampaignName(), request.getContent());
 
-        String columnaFiltro = obtenerColumnaFiltro(request.getFilterType());
         System.out.println("Columna de filtro seleccionada: " + columnaFiltro);
 
         // Subconsulta para contacto directo
@@ -172,7 +173,7 @@ public class RangoRepository {
     /**
      * Construye la consulta principal que une todas las subconsultas
      */
-    private String construirConsultaPrincipal(List<String> subconsultas) {
+    private String construirConsultaPrincipal(List<String> subconsultas, String columnaFiltro) {
         String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
         return """
             SELECT DOCUMENTO,
@@ -197,8 +198,8 @@ public class RangoRepository {
                     WHERE Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
                )
                AND TELEFONOCELULAR != ''
-             ORDER BY BLOQUE, SLDCAPCONS DESC;
-            """.formatted(unionSubconsultas);
+             ORDER BY BLOQUE, %s DESC;
+            """.formatted(unionSubconsultas, columnaFiltro);
     }
 
     /**
