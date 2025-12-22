@@ -32,4 +32,17 @@ public class TempMergeRepository {
             return null;
         }
     }
+
+    public String getEntidadByDocumento(String documento) {
+        String sql = "SELECT ENTIDAD FROM TEMP_MERGE WHERE DOCUMENTO = ? AND ENTIDAD != 'FUNO' LIMIT 1";
+
+        Query query = entityManager.createNativeQuery(sql);
+        query.setParameter(1, documento);
+
+        try {
+            return (String) query.getSingleResult();
+        } catch (jakarta.persistence.NoResultException e) {
+            return null;
+        }
+    }
 }

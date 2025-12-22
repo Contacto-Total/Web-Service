@@ -16,4 +16,9 @@ public class TempMergeServiceImpl implements TempMergeService {
     public TempMergeResponse getEmailAndTelefonoByDocumentoInTempMerge(String entidad, String documento) {
         return tempMergeRepository.getEmailAndTelefonoByDocumentoInTempMerge(entidad, documento);
     }
+
+    @Override
+    public String getEntidadByDocumento(String documento) {
+        return tempMergeRepository.getEntidadByDocumento(documento);
+    }
 }

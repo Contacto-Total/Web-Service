@@ -39,4 +39,14 @@ public class BlacklistController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("El documento no existe en la cartera seleccionada");
         }
     }
+
+    @GetMapping("/entidad/{documento}")
+    public ResponseEntity<String> getEntidadByDocumento(@PathVariable String documento) {
+        String entidad = tempMergeService.getEntidadByDocumento(documento);
+        if (entidad != null) {
+            return ResponseEntity.ok(entidad);
+        } else {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Documento no encontrado en Tramo Propio");
+        }
+    }
 }
