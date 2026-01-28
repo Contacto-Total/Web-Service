@@ -522,7 +522,8 @@ public class DynamicQueryService {
     private static final List<Supervisors> SUPERVISORES = List.of(
             new Supervisors("935374672", "Anthony",  "amarquez@contactototal.com.pe", "Anthony Marquez", "0000000000000000"),
             new Supervisors("987122850", "Romina",   "romina@contactototal.com.pe", "Romina Tapia", "0000000000000000"),
-            new Supervisors("965392490", "Jonathan", "jonathan@contactototal.com.pe", "Jonathan Reyes", "0000000000000000")
+            new Supervisors("965392490", "Jonathan", "jonathan@contactototal.com.pe", "Jonathan Reyes", "0000000000000000"),
+            new Supervisors("913254120", "Samuel", "samuel@contactototal.com.pe", "Samuel Chamorro", "0000000000000000")
     );
 
     // columnas numéricas conocidas para poner 0 como Number (no string)
@@ -543,6 +544,8 @@ public class DynamicQueryService {
                 else if ("NOMBRECOMPLETO".equals(k))   row.put(col, s.NOMBRECOMPLETO());
                 else if ("NUMCUENTAPMCP".equals(k))   row.put(col, s.NUMCUENTAPMCP());
                 else if ("EMAIL".equals(k))            row.put(col, s.email());
+                else if ("LTD".equals(k) || "LTD_LTDE".equals(k) || "LTDE".equals(k))  row.put(col, 111);
+                else if ("DEUDA_TOTAL".equals(k))      row.put(col, 1110);
                 else if (NUMERIC_COLS.contains(k))     row.put(col, 0);     // número → 0
                 else                                   row.put(col, "");    // texto vacío
             }
