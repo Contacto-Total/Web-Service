@@ -18,7 +18,7 @@ public class CartaAcuerdoRepository  {
         String sql = """
         SELECT
             CURDATE() AS FechaActual,
-            TM.NOMBRECOMPLETO AS NombreDelTitular,
+            TM.NOMBRE AS NombreDelTitular,
             TM.NUMCUENTAPMCP AS NroCuentaTarjetaOh,
             NULL AS FechaCompromiso,
             TM.SLDTOTALASIG AS DeudaTotal,
