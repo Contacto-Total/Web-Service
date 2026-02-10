@@ -82,13 +82,9 @@ public class CartaAcuerdoController {
             if (datosClienteResource.isPresent()) {
                 return ResponseEntity.ok(datosClienteResource.get());
             } else {
-                // Fallback: devolver datos básicos de TEMP_MERGE sin promesa
-                var basicData = cartaAcuerdoRepository.findBasicDataByDni(dni);
-                if (basicData.isPresent()) {
-                    return ResponseEntity.ok(basicData.get());
-                }
+                // El cliente existe pero no tiene promesa de pago u oportunidad de pago
                 return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-                        .body(new ErrorResponseResource("El cliente no tiene datos registrados", "SIN_DATOS"));
+                        .body(new ErrorResponseResource("El cliente no tiene promesa de pago u oportunidad de pago registrada", "SIN_PROMESA_OPORTUNIDAD"));
             }
 
         } catch (Exception e) {
