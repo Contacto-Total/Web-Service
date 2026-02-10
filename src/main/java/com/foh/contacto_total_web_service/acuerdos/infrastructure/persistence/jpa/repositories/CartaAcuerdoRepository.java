@@ -14,6 +14,54 @@ public class CartaAcuerdoRepository  {
     @PersistenceContext
     private EntityManager entityManager;
 
+    public Optional<DatosAcuerdoResource> findBasicDataByDni(String dni) {
+        String sql = """
+        SELECT
+            CURDATE() AS FechaActual,
+            TM.NOMBRE AS NombreDelTitular,
+            TM.NUMCUENTAPMCP AS NroCuentaTarjetaOh,
+            NULL AS FechaCompromiso,
+            TM.SLDTOTALASIG AS DeudaTotal,
+            TM.SLDCAPITALASIG AS SaldoCapitalAsig,
+            TM.`5` AS LTD,
+            TM.LTDESPECIAL AS LTDEspecial,
+            NULL AS Asesor,
+            NULL AS Observacion,
+            TM.RANGOMORAPROYAG AS Tramo
+        FROM TEMP_MERGE AS TM
+        WHERE TM.DOCUMENTO = ?1
+        LIMIT 1
+        """;
+
+        try {
+            Query query = entityManager.createNativeQuery(sql)
+                    .setParameter(1, dni);
+            Object resultObj = query.getSingleResult();
+            if (!(resultObj instanceof Object[] result)) {
+                return Optional.empty();
+            }
+            DatosAcuerdoResource resource = new DatosAcuerdoResource(
+                    result[0] != null ? result[0].toString() : null,
+                    result[1] != null ? result[1].toString() : null,
+                    result[2] != null ? result[2].toString() : null,
+                    null,
+                    result[4] != null ? result[4].toString() : null,
+                    result[5] != null ? result[5].toString() : null,
+                    result[6] != null ? result[6].toString() : null,
+                    result[7] != null ? result[7].toString() : null,
+                    null,
+                    null,
+                    result[10] != null ? result[10].toString() : null
+            );
+            return Optional.of(resource);
+        } catch (NoResultException e) {
+            return Optional.empty();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Optional.empty();
+        }
+    }
+
     public boolean clienteExisteEnTempMerge(String dni) {
         String jpql = "SELECT COUNT(TM.DOCUMENTO) FROM TEMP_MERGE AS TM WHERE TM.DOCUMENTO = ?1";
 
