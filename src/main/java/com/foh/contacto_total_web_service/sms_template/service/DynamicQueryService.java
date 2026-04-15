@@ -532,7 +532,7 @@ public class DynamicQueryService {
             "LTD","LTDE","LTD_LTDE","BAJA30_SALDOMORA","DIASMORA"
     );
 
-    // Crea filas sintéticas con el mismo set de columnas del reporte
+
     private List<Map<String,Object>> buildSupervisorRows(Collection<String> allColumns) {
         List<Map<String,Object>> out = new ArrayList<>();
         for (Supervisors s : SUPERVISORES) {
