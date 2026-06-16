@@ -59,10 +59,11 @@ public class ReporteRepository {
         finalizarConsulta(constructorConsulta);
 
         System.out.println("========== CONSULTA FINAL REPORTE ==========");
-        System.out.println(constructorConsulta.toString());
+        String consultaFinal = construirCteBase(request) + constructorConsulta;
+        System.out.println(consultaFinal);
         System.out.println("========== FIN CONSULTA REPORTE ==========");
 
-        Query query = entityManager.createNativeQuery(constructorConsulta.toString());
+        Query query = entityManager.createNativeQuery(consultaFinal);
         return query.getResultList();
     }
 
@@ -99,7 +100,6 @@ public class ReporteRepository {
                 columnaFiltro,
                 "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')",
                 "",
-                request.getCampaignName(),
                 condicionFechas,
                 condicionContenido
         );
@@ -140,7 +140,6 @@ public class ReporteRepository {
                 columnaFiltro,
                 "TIPI IN ('CONTACTO CON TERCEROS')",
                 "",
-                request.getCampaignName(),
                 condicionFechas,
                 condicionContenido
         );
@@ -185,7 +184,6 @@ public class ReporteRepository {
                 columnaFiltro,
                 condicionesTipoContacto,
                 condicionDocumentos + condicionPagadasHoy,
-                request.getCampaignName(),
                 condicionFechas,
                 condicionContenido
         );
@@ -228,7 +226,6 @@ public class ReporteRepository {
                 condicionesRango,
                 columnaFiltro,
                 condicionesNoContactado,
-                request.getCampaignName(),
                 condicionFechas,
                 condicionContenido
         );
@@ -246,39 +243,15 @@ public class ReporteRepository {
             String columnaMontos,
             String condicionesTipo,
             String condicionesAdicionales,
-            String rangoMoraProyectado,
             String condicionFechas,
             String condicionContenido
     ) {
         StringBuilder subconsulta = new StringBuilder();
-        String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
         subconsulta.append("SELECT *, '").append(tipoRango).append("' AS RANGO_TIPO FROM (")
-                .append("SELECT BUSCAR_MAYOR_TIP_V3(documento) TIPI, a.*, ")
+                .append("SELECT a.*, ")
                 .append(condicionesRango)
-                .append(" FROM TEMP_MERGE a ")
-                .append("WHERE DOCUMENTO NOT IN (")
-                .append("SELECT DOCUMENTO FROM blacklist ")
-                .append("WHERE DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN FECHA_INICIO AND FECHA_FIN")
-                .append(") ")
-                .append("AND DOCUMENTO NOT IN (")
-                .append("SELECT DOCUMENTO FROM GESTION_HISTORICA ")
-                .append("WHERE Resultado = 'CANCELACION TOTAL'")
-                .append(") ");
-
-        // Agregar condición de rango mora si existe
-        if (!condicionRangoMora.isEmpty()) {
-            subconsulta.append(" AND ").append(condicionRangoMora);
-        }
-
-        // Agregar condición de fechas si existe
-        if (!condicionFechas.isEmpty()) {
-            subconsulta.append(condicionFechas);
-        }
-
-        if (!condicionContenido.isEmpty()) {
-            subconsulta.append(" ").append(condicionContenido);
-        }
+                .append(" FROM base_tipi a ");
 
         subconsulta.append(") b ")
                 .append("WHERE CAST(").append(columnaMontos).append(" AS DECIMAL(10, 2)) > 0 ")
@@ -299,34 +272,14 @@ public class ReporteRepository {
             String condicionesRango,
             String columnaFiltro,
             String condicionesNoContactado,
-            String rangoMoraProyectado,
             String condicionFechas,
             String condicionContenido
     ) {
         StringBuilder subconsulta = new StringBuilder();
-        String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
         subconsulta.append("SELECT *, '").append(TIPO_NO_CONTACTADO).append("' AS RANGO_TIPO FROM (")
-                .append("SELECT BUSCAR_MAYOR_TIP_V3(documento) TIPI, a.*, ").append(condicionesRango)
-                .append(" FROM TEMP_MERGE a ")
-                .append("WHERE DOCUMENTO NOT IN (")
-                .append("SELECT DOCUMENTO FROM blacklist ")
-                .append("WHERE DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN FECHA_INICIO AND FECHA_FIN")
-                .append(") ")
-                .append("AND DOCUMENTO NOT IN (")
-                .append("SELECT DOCUMENTO FROM GESTION_HISTORICA ")
-                .append("WHERE Resultado = 'CANCELACION TOTAL'")
-                .append(") ");
-
-        // Agregar condición de rango mora si existe
-        if (!condicionRangoMora.isEmpty()) {
-            subconsulta.append(" AND ").append(condicionRangoMora);
-        }
-
-        // Agregar condición de fechas si existe
-        if (!condicionFechas.isEmpty()) {
-            subconsulta.append(condicionFechas);
-        }
+                .append("SELECT a.*, ").append(condicionesRango)
+                .append(" FROM base_tipi a ");
 
         subconsulta.append(") b ")
                 .append("WHERE b.rango IS NOT NULL ")
@@ -357,11 +310,76 @@ public class ReporteRepository {
      */
     private void finalizarConsulta(StringBuilder constructorConsulta) {
         constructorConsulta.append(") E GROUP BY RANGO, RANGO_TIPO ")
-                .append("ORDER BY FIELD('RANGO_TIPO', '")
+                .append("ORDER BY FIELD(RANGO_TIPO, '")
                 .append(TIPO_CONTACTO_DIRECTO).append("', '")
                 .append(TIPO_CONTACTO_INDIRECTO).append("', '")
                 .append(TIPO_PROMESA_ROTA).append("', '")
                 .append(TIPO_NO_CONTACTADO).append("')");
+    }
+
+    private String construirCteBase(GetFiltersToGenerateFileRequest request) {
+        return """
+            WITH base AS (
+                SELECT *
+                  FROM TEMP_MERGE
+                 %s
+            ),
+            docs AS (
+                SELECT DISTINCT documento
+                  FROM base
+            ),
+            tipi_gh AS (
+                SELECT gh.documento,
+                       SUBSTRING_INDEX(GROUP_CONCAT(gh.resultado ORDER BY dp.peso DESC SEPARATOR '||'), '||', 1) AS resultado
+                  FROM GESTION_HISTORICA gh
+                  JOIN diccionario_pesos dp ON gh.resultado = dp.tipificacion
+                  JOIN docs d ON d.documento = gh.documento
+                 GROUP BY gh.documento
+            ),
+            tipi_bi AS (
+                SELECT bi.documento,
+                       SUBSTRING_INDEX(GROUP_CONCAT(bi.resultado ORDER BY dp.peso DESC SEPARATOR '||'), '||', 1) AS resultado
+                  FROM GESTION_HISTORICA_BI bi
+                  JOIN diccionario_pesos dp ON bi.resultado = dp.tipificacion
+                  JOIN docs d ON d.documento = bi.documento
+                 WHERE bi.FechaGestion >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%%Y-%%m-01')
+                   AND bi.FechaGestion < DATE_FORMAT(CURDATE(), '%%Y-%%m-01')
+                 GROUP BY bi.documento
+            ),
+            base_tipi AS (
+                SELECT base.*,
+                       COALESCE(tipi_gh.resultado, tipi_bi.resultado) AS TIPI
+                  FROM base
+                  LEFT JOIN tipi_gh ON tipi_gh.documento = base.documento
+                  LEFT JOIN tipi_bi ON tipi_bi.documento = base.documento
+            )
+            """.formatted(construirCondicionesBase(request));
+    }
+
+    private String construirCondicionesBase(GetFiltersToGenerateFileRequest request) {
+        StringBuilder condiciones = new StringBuilder("WHERE 1 = 1");
+
+        String condicionRangoMora = construirCondicionRangoMora(request.getCampaignName());
+        if (!condicionRangoMora.isEmpty()) {
+            condiciones.append(" AND ").append(condicionRangoMora);
+        }
+
+        condiciones.append(construirCondicionFechas(request.getDueDates()));
+
+        String condicionContenido = construirCondicionContenido(request.getCampaignName(), request.getContent());
+        if (!condicionContenido.isEmpty()) {
+            condiciones.append(" ").append(condicionContenido);
+        }
+
+        condiciones.append(" AND DOCUMENTO NOT IN (")
+                .append("SELECT DOCUMENTO FROM blacklist ")
+                .append("WHERE DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN FECHA_INICIO AND FECHA_FIN")
+                .append(")");
+        condiciones.append(" AND DOCUMENTO NOT IN (")
+                .append("SELECT DOCUMENTO FROM GESTION_HISTORICA WHERE Resultado = 'CANCELACION TOTAL'")
+                .append(")");
+
+        return condiciones.toString();
     }
 
     private String construirSubconsultaPromesasCaidasSinColchon() {

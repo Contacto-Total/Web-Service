@@ -40,7 +40,7 @@ public class RangoRepository {
 
         String columnaFiltro = obtenerColumnaFiltro(request.getFilterType());
         List<String> subconsultas = construirSubconsultas(request, columnaFiltro);
-        String consultaFinal = construirConsultaPrincipal(subconsultas, columnaFiltro);
+        String consultaFinal = construirConsultaPrincipal(subconsultas, columnaFiltro, request);
 
         System.out.println("========== CONSULTA FINAL RANGOS ==========");
         System.out.println(consultaFinal);
@@ -58,9 +58,6 @@ public class RangoRepository {
             String columnaFiltro
     ) {
         List<String> subconsultas = new ArrayList<>();
-        String rangoMoraProyectado = request.getCampaignName();
-        String condicionFechas = construirCondicionFechas(request.getDueDates());
-        String condicionContenido = construirCondicionContenido(request.getCampaignName(), request.getContent());
 
         System.out.println("Columna de filtro seleccionada: " + columnaFiltro);
 
@@ -71,10 +68,7 @@ public class RangoRepository {
                     request.getDirectContactRanges(),
                     CONTACTO_DIRECTO,
                     columnaFiltro,
-                    "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')",
-                    rangoMoraProyectado,
-                    condicionFechas,
-                    condicionContenido
+                    "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')"
             );
             subconsultas.add(subconsulta);
         }
@@ -86,10 +80,7 @@ public class RangoRepository {
                     request.getIndirectContactRanges(),
                     CONTACTO_INDIRECTO,
                     columnaFiltro,
-                    "TIPI IN ('CONTACTO CON TERCEROS')",
-                    rangoMoraProyectado,
-                    condicionFechas,
-                    condicionContenido
+                    "TIPI IN ('CONTACTO CON TERCEROS')"
             );
             subconsultas.add(subconsulta);
         }
@@ -103,10 +94,7 @@ public class RangoRepository {
                     request.getBrokenPromisesRanges(),
                     PROMESA_ROTA,
                     columnaFiltro,
-                    condicionesExtra,
-                    rangoMoraProyectado,
-                    condicionFechas,
-                    condicionContenido
+                    condicionesExtra
             );
             subconsultas.add(subconsulta);
         }
@@ -121,10 +109,7 @@ public class RangoRepository {
                     request.getNotContactedRanges(),
                     NO_CONTACTADO,
                     columnaFiltro,
-                    condicionesNoContactado,
-                    rangoMoraProyectado,
-                    condicionFechas,
-                    condicionContenido
+                    condicionesNoContactado
             );
             subconsultas.add(subconsulta);
         }
@@ -141,61 +126,110 @@ public class RangoRepository {
             List<RangoRequest> rangos,
             String tipoRango,
             String columnaMontos,
-            String condicionesAdicionales,
-            String rangoMoraProyectado,
-            String condicionFechas,
-            String condicionContenido
+            String condicionesAdicionales
     ) {
         String condicionesRango = RangoConditionBuilder.buildRangoConditions(
                 rangos, tipoRango, columnaMontos);
-        String condicionRangoMora = construirCondicionRangoMora(rangoMoraProyectado);
 
         return """
             SELECT %d AS BLOQUE, b.*
               FROM (
-                   SELECT BUSCAR_MAYOR_TIP_V3(documento) AS TIPI,
-                          a.*,
+                   SELECT a.*,
                           %s
-                     FROM TEMP_MERGE a
-                    %s
+                     FROM base_tipi a
               ) b
              WHERE b.rango IS NOT NULL
                AND CAST(%s AS DECIMAL(10, 2)) > 0
-               AND %s%s
-            """.formatted(numeroBloque, condicionesRango, condicionRangoMora,
-                columnaMontos, condicionesAdicionales, condicionFechas);
+               AND %s
+            """.formatted(numeroBloque, condicionesRango, columnaMontos, condicionesAdicionales);
     }
 
     /**
      * Construye la consulta principal que une todas las subconsultas
      */
-    private String construirConsultaPrincipal(List<String> subconsultas, String columnaFiltro) {
+    private String construirConsultaPrincipal(List<String> subconsultas, String columnaFiltro, GetFiltersToGenerateFileRequest request) {
         String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
-        return """
+        return construirCteBase(request, true) + """
             SELECT DOCUMENTO,
                    COALESCE(TELEFONOCELULAR, telefonodomicilio, telefonolaboral, telfreferencia1, telfreferencia2),
                    TIPI
               FROM (
                    %s
-              ) B
-             WHERE DOCUMENTO NOT IN (
-                   SELECT DOCUMENTO
-                     FROM blacklist
-                    WHERE DATE_FORMAT(CURDATE(), '%%Y-%%m-%%d') BETWEEN FECHA_INICIO AND FECHA_FIN
-             )
-               AND DOCUMENTO NOT IN (
-                   SELECT DOCUMENTO
-                     FROM GESTION_HISTORICA
-                    WHERE Resultado = 'CANCELACION TOTAL'
-               )
-               AND TELEFONOCELULAR NOT IN (
-                   SELECT DISTINCT Telefono
-                     FROM GESTION_HISTORICA_BI
-                    WHERE Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')
-               )
-               AND TELEFONOCELULAR != ''
+               ) B
              ORDER BY BLOQUE, %s DESC;
             """.formatted(unionSubconsultas, columnaFiltro);
+    }
+
+    private String construirCteBase(GetFiltersToGenerateFileRequest request, boolean incluirFiltrosTelefono) {
+        return """
+            WITH base AS (
+                SELECT *
+                  FROM TEMP_MERGE
+                 %s
+            ),
+            docs AS (
+                SELECT DISTINCT documento
+                  FROM base
+            ),
+            tipi_gh AS (
+                SELECT gh.documento,
+                       SUBSTRING_INDEX(GROUP_CONCAT(gh.resultado ORDER BY dp.peso DESC SEPARATOR '||'), '||', 1) AS resultado
+                  FROM GESTION_HISTORICA gh
+                  JOIN diccionario_pesos dp ON gh.resultado = dp.tipificacion
+                  JOIN docs d ON d.documento = gh.documento
+                 GROUP BY gh.documento
+            ),
+            tipi_bi AS (
+                SELECT bi.documento,
+                       SUBSTRING_INDEX(GROUP_CONCAT(bi.resultado ORDER BY dp.peso DESC SEPARATOR '||'), '||', 1) AS resultado
+                  FROM GESTION_HISTORICA_BI bi
+                  JOIN diccionario_pesos dp ON bi.resultado = dp.tipificacion
+                  JOIN docs d ON d.documento = bi.documento
+                 WHERE bi.FechaGestion >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%%Y-%%m-01')
+                   AND bi.FechaGestion < DATE_FORMAT(CURDATE(), '%%Y-%%m-01')
+                 GROUP BY bi.documento
+            ),
+            base_tipi AS (
+                SELECT base.*,
+                       COALESCE(tipi_gh.resultado, tipi_bi.resultado) AS TIPI
+                  FROM base
+                  LEFT JOIN tipi_gh ON tipi_gh.documento = base.documento
+                  LEFT JOIN tipi_bi ON tipi_bi.documento = base.documento
+            )
+            """.formatted(construirCondicionesBase(request, incluirFiltrosTelefono));
+    }
+
+    private String construirCondicionesBase(GetFiltersToGenerateFileRequest request, boolean incluirFiltrosTelefono) {
+        StringBuilder condiciones = new StringBuilder("WHERE 1 = 1");
+
+        if (request.getCampaignName() != null && !request.getCampaignName().trim().isEmpty()) {
+            condiciones.append(" AND RANGOMORAPROYAG = '").append(request.getCampaignName().trim()).append("'");
+        }
+
+        condiciones.append(construirCondicionFechas(request.getDueDates()));
+
+        String condicionContenido = construirCondicionContenido(request.getCampaignName(), request.getContent());
+        if (!condicionContenido.isEmpty()) {
+            condiciones.append(" ").append(condicionContenido);
+        }
+
+        condiciones.append(" AND DOCUMENTO NOT IN (")
+                .append("SELECT DOCUMENTO FROM blacklist ")
+                .append("WHERE DATE_FORMAT(CURDATE(), '%Y-%m-%d') BETWEEN FECHA_INICIO AND FECHA_FIN")
+                .append(")");
+        condiciones.append(" AND DOCUMENTO NOT IN (")
+                .append("SELECT DOCUMENTO FROM GESTION_HISTORICA WHERE Resultado = 'CANCELACION TOTAL'")
+                .append(")");
+
+        if (incluirFiltrosTelefono) {
+            condiciones.append(" AND TELEFONOCELULAR NOT IN (")
+                    .append("SELECT DISTINCT Telefono FROM GESTION_HISTORICA_BI ")
+                    .append("WHERE Resultado IN ('FUERA DE SERVICIO - NO EXISTE', 'EQUIVOCADO', 'FALLECIDO')")
+                    .append(")");
+            condiciones.append(" AND TELEFONOCELULAR != ''");
+        }
+
+        return condiciones.toString();
     }
 
     /**
@@ -231,16 +265,6 @@ public class RangoRepository {
                 "WHERE Resultado IN ('PROMESA DE PAGO', 'OPORTUNIDAD DE PAGO') " +
                 "AND (Observacion LIKE '%(CONVENIO)%' OR Observacion LIKE '%(EXCEPCION)%') " +
                 "AND FechaGestion <= DATE_FORMAT(CURDATE(), '%Y-%m-03'))";
-    }
-
-    /**
-     * Construye la condición WHERE para el rango de mora proyectado
-     */
-    private String construirCondicionRangoMora(String rangoMoraProyectado) {
-        if (rangoMoraProyectado == null || rangoMoraProyectado.trim().isEmpty()) {
-            return "";
-        }
-        return "WHERE RANGOMORAPROYAG = '" + rangoMoraProyectado.trim() + "'";
     }
 
     /**
