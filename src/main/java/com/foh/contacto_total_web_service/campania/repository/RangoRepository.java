@@ -58,6 +58,7 @@ public class RangoRepository {
             String columnaFiltro
     ) {
         List<String> subconsultas = new ArrayList<>();
+        String baseTipi = construirBaseTipi(request, true);
 
         System.out.println("Columna de filtro seleccionada: " + columnaFiltro);
 
@@ -68,7 +69,8 @@ public class RangoRepository {
                     request.getDirectContactRanges(),
                     CONTACTO_DIRECTO,
                     columnaFiltro,
-                    "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')"
+                    "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')",
+                    baseTipi
             );
             subconsultas.add(subconsulta);
         }
@@ -80,7 +82,8 @@ public class RangoRepository {
                     request.getIndirectContactRanges(),
                     CONTACTO_INDIRECTO,
                     columnaFiltro,
-                    "TIPI IN ('CONTACTO CON TERCEROS')"
+                    "TIPI IN ('CONTACTO CON TERCEROS')",
+                    baseTipi
             );
             subconsultas.add(subconsulta);
         }
@@ -94,7 +97,8 @@ public class RangoRepository {
                     request.getBrokenPromisesRanges(),
                     PROMESA_ROTA,
                     columnaFiltro,
-                    condicionesExtra
+                    condicionesExtra,
+                    baseTipi
             );
             subconsultas.add(subconsulta);
         }
@@ -109,7 +113,8 @@ public class RangoRepository {
                     request.getNotContactedRanges(),
                     NO_CONTACTADO,
                     columnaFiltro,
-                    condicionesNoContactado
+                    condicionesNoContactado,
+                    baseTipi
             );
             subconsultas.add(subconsulta);
         }
@@ -126,7 +131,8 @@ public class RangoRepository {
             List<RangoRequest> rangos,
             String tipoRango,
             String columnaMontos,
-            String condicionesAdicionales
+            String condicionesAdicionales,
+            String baseTipi
     ) {
         String condicionesRango = RangoConditionBuilder.buildRangoConditions(
                 rangos, tipoRango, columnaMontos);
@@ -136,12 +142,12 @@ public class RangoRepository {
               FROM (
                    SELECT a.*,
                           %s
-                     FROM base_tipi a
+                     FROM (%s) a
               ) b
              WHERE b.rango IS NOT NULL
                AND CAST(%s AS DECIMAL(10, 2)) > 0
                AND %s
-            """.formatted(numeroBloque, condicionesRango, columnaMontos, condicionesAdicionales);
+            """.formatted(numeroBloque, condicionesRango, baseTipi, columnaMontos, condicionesAdicionales);
     }
 
     /**
@@ -149,7 +155,7 @@ public class RangoRepository {
      */
     private String construirConsultaPrincipal(List<String> subconsultas, String columnaFiltro, GetFiltersToGenerateFileRequest request) {
         String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
-        return construirCteBase(request, true) + """
+        return """
             SELECT DOCUMENTO,
                    COALESCE(TELEFONOCELULAR, telefonodomicilio, telefonolaboral, telfreferencia1, telfreferencia2),
                    TIPI
@@ -158,45 +164,6 @@ public class RangoRepository {
                ) B
              ORDER BY BLOQUE, %s DESC;
             """.formatted(unionSubconsultas, columnaFiltro);
-    }
-
-    private String construirCteBase(GetFiltersToGenerateFileRequest request, boolean incluirFiltrosTelefono) {
-        return """
-            WITH base AS (
-                SELECT *
-                  FROM TEMP_MERGE
-                 %s
-            ),
-            docs AS (
-                SELECT DISTINCT documento
-                  FROM base
-            ),
-            tipi_gh AS (
-                SELECT gh.documento,
-                       SUBSTRING_INDEX(GROUP_CONCAT(gh.resultado ORDER BY dp.peso DESC SEPARATOR '||'), '||', 1) AS resultado
-                  FROM GESTION_HISTORICA gh
-                  JOIN diccionario_pesos dp ON gh.resultado = dp.tipificacion
-                  JOIN docs d ON d.documento = gh.documento
-                 GROUP BY gh.documento
-            ),
-            tipi_bi AS (
-                SELECT bi.documento,
-                       SUBSTRING_INDEX(GROUP_CONCAT(bi.resultado ORDER BY dp.peso DESC SEPARATOR '||'), '||', 1) AS resultado
-                  FROM GESTION_HISTORICA_BI bi
-                  JOIN diccionario_pesos dp ON bi.resultado = dp.tipificacion
-                  JOIN docs d ON d.documento = bi.documento
-                 WHERE bi.FechaGestion >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%%Y-%%m-01')
-                   AND bi.FechaGestion < DATE_FORMAT(CURDATE(), '%%Y-%%m-01')
-                 GROUP BY bi.documento
-            ),
-            base_tipi AS (
-                SELECT base.*,
-                       COALESCE(tipi_gh.resultado, tipi_bi.resultado) AS TIPI
-                  FROM base
-                  LEFT JOIN tipi_gh ON tipi_gh.documento = base.documento
-                  LEFT JOIN tipi_bi ON tipi_bi.documento = base.documento
-            )
-            """.formatted(construirCondicionesBase(request, incluirFiltrosTelefono));
     }
 
     private String construirCondicionesBase(GetFiltersToGenerateFileRequest request, boolean incluirFiltrosTelefono) {
@@ -230,6 +197,39 @@ public class RangoRepository {
         }
 
         return condiciones.toString();
+    }
+
+    private String construirBaseTipi(GetFiltersToGenerateFileRequest request, boolean incluirFiltrosTelefono) {
+        String condicionesBase = construirCondicionesBase(request, incluirFiltrosTelefono);
+        String documentosBase = "SELECT DISTINCT documento FROM TEMP_MERGE " + condicionesBase;
+
+        return """
+            SELECT base.*,
+                   COALESCE(tipi_gh.resultado, tipi_bi.resultado) AS TIPI
+              FROM (
+                   SELECT *
+                     FROM TEMP_MERGE
+                    %s
+              ) base
+              LEFT JOIN (
+                   SELECT gh.documento,
+                          SUBSTRING_INDEX(GROUP_CONCAT(gh.resultado ORDER BY dp.peso DESC SEPARATOR '||'), '||', 1) AS resultado
+                     FROM GESTION_HISTORICA gh
+                     JOIN diccionario_pesos dp ON gh.resultado = dp.tipificacion
+                     JOIN (%s) docs ON docs.documento = gh.documento
+                    GROUP BY gh.documento
+              ) tipi_gh ON tipi_gh.documento = base.documento
+              LEFT JOIN (
+                   SELECT bi.documento,
+                          SUBSTRING_INDEX(GROUP_CONCAT(bi.resultado ORDER BY dp.peso DESC SEPARATOR '||'), '||', 1) AS resultado
+                     FROM GESTION_HISTORICA_BI bi
+                     JOIN diccionario_pesos dp ON bi.resultado = dp.tipificacion
+                     JOIN (%s) docs ON docs.documento = bi.documento
+                    WHERE bi.FechaGestion >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%%Y-%%m-01')
+                      AND bi.FechaGestion < DATE_FORMAT(CURDATE(), '%%Y-%%m-01')
+                    GROUP BY bi.documento
+              ) tipi_bi ON tipi_bi.documento = base.documento
+            """.formatted(condicionesBase, documentosBase, documentosBase);
     }
 
     /**

@@ -47,19 +47,20 @@ public class ReporteRepository {
 
         String condicionFechas = construirCondicionFechas(request.getDueDates());
         String condicionContenido = construirCondicionContenido(request.getCampaignName(), request.getContent());
+        String baseTipi = construirBaseTipi(request);
         boolean hayConsultaPrevia = false;
 
         // Agregar cada tipo de contacto si está presente
-        hayConsultaPrevia = agregarConsultaContactoDirecto(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
-        hayConsultaPrevia = agregarConsultaContactoIndirecto(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
-        hayConsultaPrevia = agregarConsultaPromesasRotas(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
-        hayConsultaPrevia = agregarConsultaNoContactados(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
+        hayConsultaPrevia = agregarConsultaContactoDirecto(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido, baseTipi);
+        hayConsultaPrevia = agregarConsultaContactoIndirecto(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido, baseTipi);
+        hayConsultaPrevia = agregarConsultaPromesasRotas(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido, baseTipi);
+        hayConsultaPrevia = agregarConsultaNoContactados(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido, baseTipi);
 
         // Finalizar la consulta con GROUP BY y ORDER BY
         finalizarConsulta(constructorConsulta);
 
         System.out.println("========== CONSULTA FINAL REPORTE ==========");
-        String consultaFinal = construirCteBase(request) + constructorConsulta;
+        String consultaFinal = constructorConsulta.toString();
         System.out.println(consultaFinal);
         System.out.println("========== FIN CONSULTA REPORTE ==========");
 
@@ -75,7 +76,8 @@ public class ReporteRepository {
             StringBuilder constructorConsulta,
             boolean hayConsultaPrevia,
             String condicionFechas,
-            String condicionContenido
+            String condicionContenido,
+            String baseTipi
     ) {
         if (!tieneElementos(request.getDirectContactRanges())) {
             return hayConsultaPrevia;
@@ -101,7 +103,8 @@ public class ReporteRepository {
                 "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')",
                 "",
                 condicionFechas,
-                condicionContenido
+                condicionContenido,
+                baseTipi
         );
 
         constructorConsulta.append(subconsulta);
@@ -116,7 +119,8 @@ public class ReporteRepository {
             StringBuilder constructorConsulta,
             boolean hayConsultaPrevia,
             String condicionFechas,
-            String condicionContenido
+            String condicionContenido,
+            String baseTipi
     ) {
         if (!tieneElementos(request.getIndirectContactRanges())) {
             return hayConsultaPrevia;
@@ -141,7 +145,8 @@ public class ReporteRepository {
                 "TIPI IN ('CONTACTO CON TERCEROS')",
                 "",
                 condicionFechas,
-                condicionContenido
+                condicionContenido,
+                baseTipi
         );
 
         constructorConsulta.append(subconsulta);
@@ -156,7 +161,8 @@ public class ReporteRepository {
             StringBuilder constructorConsulta,
             boolean hayConsultaPrevia,
             String condicionFechas,
-            String condicionContenido
+            String condicionContenido,
+            String baseTipi
     ) {
         if (!tieneElementos(request.getBrokenPromisesRanges())) {
             return hayConsultaPrevia;
@@ -185,7 +191,8 @@ public class ReporteRepository {
                 condicionesTipoContacto,
                 condicionDocumentos + condicionPagadasHoy,
                 condicionFechas,
-                condicionContenido
+                condicionContenido,
+                baseTipi
         );
 
         constructorConsulta.append(subconsulta);
@@ -200,7 +207,8 @@ public class ReporteRepository {
             StringBuilder constructorConsulta,
             boolean hayConsultaPrevia,
             String condicionFechas,
-            String condicionContenido
+            String condicionContenido,
+            String baseTipi
     ) {
         if (!tieneElementos(request.getNotContactedRanges())) {
             return hayConsultaPrevia;
@@ -227,7 +235,8 @@ public class ReporteRepository {
                 columnaFiltro,
                 condicionesNoContactado,
                 condicionFechas,
-                condicionContenido
+                condicionContenido,
+                baseTipi
         );
 
         constructorConsulta.append(subconsulta);
@@ -244,14 +253,15 @@ public class ReporteRepository {
             String condicionesTipo,
             String condicionesAdicionales,
             String condicionFechas,
-            String condicionContenido
+            String condicionContenido,
+            String baseTipi
     ) {
         StringBuilder subconsulta = new StringBuilder();
 
         subconsulta.append("SELECT *, '").append(tipoRango).append("' AS RANGO_TIPO FROM (")
                 .append("SELECT a.*, ")
                 .append(condicionesRango)
-                .append(" FROM base_tipi a ");
+                .append(" FROM (").append(baseTipi).append(") a ");
 
         subconsulta.append(") b ")
                 .append("WHERE CAST(").append(columnaMontos).append(" AS DECIMAL(10, 2)) > 0 ")
@@ -273,13 +283,14 @@ public class ReporteRepository {
             String columnaFiltro,
             String condicionesNoContactado,
             String condicionFechas,
-            String condicionContenido
+            String condicionContenido,
+            String baseTipi
     ) {
         StringBuilder subconsulta = new StringBuilder();
 
         subconsulta.append("SELECT *, '").append(TIPO_NO_CONTACTADO).append("' AS RANGO_TIPO FROM (")
                 .append("SELECT a.*, ").append(condicionesRango)
-                .append(" FROM base_tipi a ");
+                .append(" FROM (").append(baseTipi).append(") a ");
 
         subconsulta.append(") b ")
                 .append("WHERE b.rango IS NOT NULL ")
@@ -317,43 +328,37 @@ public class ReporteRepository {
                 .append(TIPO_NO_CONTACTADO).append("')");
     }
 
-    private String construirCteBase(GetFiltersToGenerateFileRequest request) {
+    private String construirBaseTipi(GetFiltersToGenerateFileRequest request) {
+        String condicionesBase = construirCondicionesBase(request);
+        String documentosBase = "SELECT DISTINCT documento FROM TEMP_MERGE " + condicionesBase;
+
         return """
-            WITH base AS (
-                SELECT *
-                  FROM TEMP_MERGE
-                 %s
-            ),
-            docs AS (
-                SELECT DISTINCT documento
-                  FROM base
-            ),
-            tipi_gh AS (
-                SELECT gh.documento,
-                       SUBSTRING_INDEX(GROUP_CONCAT(gh.resultado ORDER BY dp.peso DESC SEPARATOR '||'), '||', 1) AS resultado
-                  FROM GESTION_HISTORICA gh
-                  JOIN diccionario_pesos dp ON gh.resultado = dp.tipificacion
-                  JOIN docs d ON d.documento = gh.documento
-                 GROUP BY gh.documento
-            ),
-            tipi_bi AS (
-                SELECT bi.documento,
-                       SUBSTRING_INDEX(GROUP_CONCAT(bi.resultado ORDER BY dp.peso DESC SEPARATOR '||'), '||', 1) AS resultado
-                  FROM GESTION_HISTORICA_BI bi
-                  JOIN diccionario_pesos dp ON bi.resultado = dp.tipificacion
-                  JOIN docs d ON d.documento = bi.documento
-                 WHERE bi.FechaGestion >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%%Y-%%m-01')
-                   AND bi.FechaGestion < DATE_FORMAT(CURDATE(), '%%Y-%%m-01')
-                 GROUP BY bi.documento
-            ),
-            base_tipi AS (
-                SELECT base.*,
-                       COALESCE(tipi_gh.resultado, tipi_bi.resultado) AS TIPI
-                  FROM base
-                  LEFT JOIN tipi_gh ON tipi_gh.documento = base.documento
-                  LEFT JOIN tipi_bi ON tipi_bi.documento = base.documento
-            )
-            """.formatted(construirCondicionesBase(request));
+            SELECT base.*,
+                   COALESCE(tipi_gh.resultado, tipi_bi.resultado) AS TIPI
+              FROM (
+                   SELECT *
+                     FROM TEMP_MERGE
+                    %s
+              ) base
+              LEFT JOIN (
+                   SELECT gh.documento,
+                          SUBSTRING_INDEX(GROUP_CONCAT(gh.resultado ORDER BY dp.peso DESC SEPARATOR '||'), '||', 1) AS resultado
+                     FROM GESTION_HISTORICA gh
+                     JOIN diccionario_pesos dp ON gh.resultado = dp.tipificacion
+                     JOIN (%s) docs ON docs.documento = gh.documento
+                    GROUP BY gh.documento
+              ) tipi_gh ON tipi_gh.documento = base.documento
+              LEFT JOIN (
+                   SELECT bi.documento,
+                          SUBSTRING_INDEX(GROUP_CONCAT(bi.resultado ORDER BY dp.peso DESC SEPARATOR '||'), '||', 1) AS resultado
+                     FROM GESTION_HISTORICA_BI bi
+                     JOIN diccionario_pesos dp ON bi.resultado = dp.tipificacion
+                     JOIN (%s) docs ON docs.documento = bi.documento
+                    WHERE bi.FechaGestion >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%%Y-%%m-01')
+                      AND bi.FechaGestion < DATE_FORMAT(CURDATE(), '%%Y-%%m-01')
+                    GROUP BY bi.documento
+              ) tipi_bi ON tipi_bi.documento = base.documento
+            """.formatted(condicionesBase, documentosBase, documentosBase);
     }
 
     private String construirCondicionesBase(GetFiltersToGenerateFileRequest request) {
