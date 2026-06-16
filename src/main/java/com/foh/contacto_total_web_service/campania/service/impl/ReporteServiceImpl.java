@@ -1,6 +1,5 @@
 package com.foh.contacto_total_web_service.campania.service.impl;
 
-import com.foh.contacto_total_web_service.compromiso.repository.CompromisoRepository;
 import com.foh.contacto_total_web_service.campania.dto.GetFiltersToGenerateFileRequest;
 import com.foh.contacto_total_web_service.campania.repository.ReporteRepository;
 import com.foh.contacto_total_web_service.campania.service.ReporteService;
@@ -23,21 +22,14 @@ public class ReporteServiceImpl implements ReporteService {
     @Autowired
     private ReporteRepository reporteRepository;
 
-    @Autowired
-    private CompromisoRepository compromisoRepository;
-
     @Override
     public File getReporteByRangesAndGenerateFile(GetFiltersToGenerateFileRequest getFiltersToGenerateFileRequest) {
         System.out.println("========== [REPORTE SERVICE] INICIO ==========");
         long startTime = System.currentTimeMillis();
 
-        System.out.println("[REPORTE SERVICE] Obteniendo promesas caídas...");
-        List<String> promesasCaidas = compromisoRepository.findPromesasCaidasWithoutColchon();
-        System.out.println("[REPORTE SERVICE] Promesas caídas obtenidas: " + promesasCaidas.size() + " registros");
-
         System.out.println("[REPORTE SERVICE] Ejecutando query de reporte...");
         long queryStart = System.currentTimeMillis();
-        List<Object[]> resultados = reporteRepository.getReporteByRangos(getFiltersToGenerateFileRequest, promesasCaidas);
+        List<Object[]> resultados = reporteRepository.getReporteByRangos(getFiltersToGenerateFileRequest);
         System.out.println("[REPORTE SERVICE] Query completada: " + resultados.size() + " filas - Tiempo: " + (System.currentTimeMillis() - queryStart) + "ms");
 
         Integer rowCount = 0;

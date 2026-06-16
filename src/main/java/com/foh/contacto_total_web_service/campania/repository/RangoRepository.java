@@ -29,19 +29,17 @@ public class RangoRepository {
     /**
      * Busca rangos por tipo de contacto y genera una consulta combinada
      * @param request Parámetros de búsqueda con los diferentes tipos de rangos
-     * @param documentosPromesasCaidas Lista de documentos con promesas caídas
      * @return Lista de resultados con documento, teléfono y tipo de contacto
      */
     public List<Object[]> findByRangosAndTipoContacto(
-            GetFiltersToGenerateFileRequest request,
-            List<String> documentosPromesasCaidas
+            GetFiltersToGenerateFileRequest request
     ) {
         System.out.println("========== INICIO RANGO REPOSITORY ==========");
         System.out.println("FilterType recibido: " + request.getFilterType());
         System.out.println("Campaign Name: " + request.getCampaignName());
 
         String columnaFiltro = obtenerColumnaFiltro(request.getFilterType());
-        List<String> subconsultas = construirSubconsultas(request, documentosPromesasCaidas, columnaFiltro);
+        List<String> subconsultas = construirSubconsultas(request, columnaFiltro);
         String consultaFinal = construirConsultaPrincipal(subconsultas, columnaFiltro);
 
         System.out.println("========== CONSULTA FINAL RANGOS ==========");
@@ -57,7 +55,6 @@ public class RangoRepository {
      */
     private List<String> construirSubconsultas(
             GetFiltersToGenerateFileRequest request,
-            List<String> documentosPromesasCaidas,
             String columnaFiltro
     ) {
         List<String> subconsultas = new ArrayList<>();
@@ -99,9 +96,8 @@ public class RangoRepository {
 
         // Subconsulta para promesas rotas
         if (tieneElementos(request.getBrokenPromisesRanges())) {
-            String condicionPromesas = construirCondicionPromesasRotas(documentosPromesasCaidas);
             String condicionPagadasHoy = construirCondicionPagadasHoy(request.getExcluirPagadasHoy());
-            String condicionesExtra = construirCondicionesPromesasRotas(condicionPromesas, condicionPagadasHoy);
+            String condicionesExtra = construirCondicionesPromesasRotas(condicionPagadasHoy);
             String subconsulta = construirSubconsulta(
                     3, // bloque
                     request.getBrokenPromisesRanges(),
@@ -205,16 +201,11 @@ public class RangoRepository {
     /**
      * Construye las condiciones específicas para promesas rotas
      */
-    private String construirCondicionesPromesasRotas(String condicionDocumentos, String condicionPagadasHoy) {
+    private String construirCondicionesPromesasRotas(String condicionPagadasHoy) {
         String tiposPromesa = "TIPI IN ('PROMESA DE PAGO', 'OPORTUNIDAD DE PAGO', " +
                 "'RECORDATORIO DE PAGO', 'CONFIRMACION DE ABONO', 'CANCELACION PARCIAL', " +
                 "'CANCELACION TOTAL', 'CANCELACION NO REPORTADAS O APLICADAS')";
-        String condicionFinal = tiposPromesa;
-        if (condicionDocumentos.isEmpty()) {
-            condicionFinal += " AND documento IN ('')";
-        } else {
-            condicionFinal += " AND documento IN (" + condicionDocumentos + ")";
-        }
+        String condicionFinal = tiposPromesa + " AND documento IN (" + construirSubconsultaPromesasCaidasSinColchon() + ")";
         condicionFinal += condicionPagadasHoy;
         return condicionFinal;
     }
@@ -229,16 +220,17 @@ public class RangoRepository {
         return " AND documento NOT IN (SELECT DISTINCT documento FROM PROMESAS_HISTORICO WHERE Estado = 'Pagada')";
     }
 
-    /**
-     * Construye la condición para documentos de promesas caídas
-     */
-    private String construirCondicionPromesasRotas(List<String> documentosPromesasCaidas) {
-        if (!tieneElementos(documentosPromesasCaidas)) {
-            return "";
-        }
-        return documentosPromesasCaidas.stream()
-                .map(documento -> "'" + documento + "'")
-                .collect(Collectors.joining(", "));
+    private String construirSubconsultaPromesasCaidasSinColchon() {
+        return "SELECT DOCUMENTO FROM COMPROMISOS " +
+                "WHERE DAY(CURDATE()) <> 2 " +
+                "AND IMPORTE_PAGO_MENSUAL = 0 " +
+                "AND ESTADO_COMPROMISO = 'CAIDO' " +
+                "AND FECHA_COMPROMISO <= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '%Y-%m-%d') " +
+                "AND DOCUMENTO NOT IN (" +
+                "SELECT DISTINCT Documento FROM GESTION_HISTORICA " +
+                "WHERE Resultado IN ('PROMESA DE PAGO', 'OPORTUNIDAD DE PAGO') " +
+                "AND (Observacion LIKE '%(CONVENIO)%' OR Observacion LIKE '%(EXCEPCION)%') " +
+                "AND FechaGestion <= DATE_FORMAT(CURDATE(), '%Y-%m-03'))";
     }
 
     /**

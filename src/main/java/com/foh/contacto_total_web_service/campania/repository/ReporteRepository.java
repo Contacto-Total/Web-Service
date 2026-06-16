@@ -33,12 +33,10 @@ public class ReporteRepository {
     /**
      * Genera un reporte agrupado por rangos de diferentes tipos de contacto
      * @param request Parámetros con los rangos de cada tipo de contacto
-     * @param documentosPromesasCaidas Lista de documentos con promesas caídas
      * @return Lista con el conteo de registros por rango y tipo
      */
     public List<Object[]> getReporteByRangos(
-            GetFiltersToGenerateFileRequest request,
-            List<String> documentosPromesasCaidas
+            GetFiltersToGenerateFileRequest request
     ) {
         System.out.println("========== INICIO REPORTE REPOSITORY ==========");
         System.out.println("FilterType recibido: " + request.getFilterType());
@@ -54,7 +52,7 @@ public class ReporteRepository {
         // Agregar cada tipo de contacto si está presente
         hayConsultaPrevia = agregarConsultaContactoDirecto(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
         hayConsultaPrevia = agregarConsultaContactoIndirecto(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
-        hayConsultaPrevia = agregarConsultaPromesasRotas(request, constructorConsulta, documentosPromesasCaidas, hayConsultaPrevia, condicionFechas, condicionContenido);
+        hayConsultaPrevia = agregarConsultaPromesasRotas(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
         hayConsultaPrevia = agregarConsultaNoContactados(request, constructorConsulta, hayConsultaPrevia, condicionFechas, condicionContenido);
 
         // Finalizar la consulta con GROUP BY y ORDER BY
@@ -157,7 +155,6 @@ public class ReporteRepository {
     private boolean agregarConsultaPromesasRotas(
             GetFiltersToGenerateFileRequest request,
             StringBuilder constructorConsulta,
-            List<String> documentosPromesasCaidas,
             boolean hayConsultaPrevia,
             String condicionFechas,
             String condicionContenido
@@ -179,7 +176,7 @@ public class ReporteRepository {
         );
 
         String condicionesTipoContacto = construirCondicionesTipoPromesa();
-        String condicionDocumentos = construirCondicionDocumentosPromesas(documentosPromesasCaidas);
+        String condicionDocumentos = construirCondicionDocumentosPromesas();
         String condicionPagadasHoy = construirCondicionPagadasHoy(request.getExcluirPagadasHoy());
 
         String subconsulta = construirSubconsultaBase(
@@ -283,7 +280,7 @@ public class ReporteRepository {
             subconsulta.append(" ").append(condicionContenido);
         }
 
-        subconsulta.append(" ORDER BY SLDCAPCONS DESC) b ")
+        subconsulta.append(") b ")
                 .append("WHERE CAST(").append(columnaMontos).append(" AS DECIMAL(10, 2)) > 0 ")
                 .append("AND ").append(condicionesTipo).append(" ")
                 .append("AND b.rango IS NOT NULL");
@@ -331,7 +328,7 @@ public class ReporteRepository {
             subconsulta.append(condicionFechas);
         }
 
-        subconsulta.append(" ORDER BY SLDCAPCONS DESC) b ")
+        subconsulta.append(") b ")
                 .append("WHERE b.rango IS NOT NULL ")
                 .append("AND CAST(").append(columnaFiltro).append(" AS DECIMAL(10, 2)) > 0 ")
                 .append("AND ").append(condicionesNoContactado);
@@ -351,12 +348,8 @@ public class ReporteRepository {
     /**
      * Construye la condición para filtrar documentos de promesas caídas
      */
-    private String construirCondicionDocumentosPromesas(List<String> documentosPromesasCaidas) {
-        if (!tieneElementos(documentosPromesasCaidas)) {
-            return "AND documento IN ('')";
-        }
-        String listaDocumentos = construirListaDocumentosPromesas(documentosPromesasCaidas);
-        return "AND documento IN (" + listaDocumentos + ")";
+    private String construirCondicionDocumentosPromesas() {
+        return "AND documento IN (" + construirSubconsultaPromesasCaidasSinColchon() + ")";
     }
 
     /**
@@ -371,16 +364,17 @@ public class ReporteRepository {
                 .append(TIPO_NO_CONTACTADO).append("')");
     }
 
-    /**
-     * Construye una lista de documentos formateada para SQL IN clause
-     */
-    private String construirListaDocumentosPromesas(List<String> documentosPromesasCaidas) {
-        if (!tieneElementos(documentosPromesasCaidas)) {
-            return "";
-        }
-        return documentosPromesasCaidas.stream()
-                .map(documento -> "'" + documento + "'")
-                .collect(Collectors.joining(", "));
+    private String construirSubconsultaPromesasCaidasSinColchon() {
+        return "SELECT DOCUMENTO FROM COMPROMISOS " +
+                "WHERE DAY(CURDATE()) <> 2 " +
+                "AND IMPORTE_PAGO_MENSUAL = 0 " +
+                "AND ESTADO_COMPROMISO = 'CAIDO' " +
+                "AND FECHA_COMPROMISO <= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '%Y-%m-%d') " +
+                "AND DOCUMENTO NOT IN (" +
+                "SELECT DISTINCT Documento FROM GESTION_HISTORICA " +
+                "WHERE Resultado IN ('PROMESA DE PAGO', 'OPORTUNIDAD DE PAGO') " +
+                "AND (Observacion LIKE '%(CONVENIO)%' OR Observacion LIKE '%(EXCEPCION)%') " +
+                "AND FechaGestion <= DATE_FORMAT(CURDATE(), '%Y-%m-03'))";
     }
 
     /**

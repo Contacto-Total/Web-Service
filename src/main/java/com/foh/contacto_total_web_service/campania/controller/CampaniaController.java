@@ -18,6 +18,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.List;
+import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -60,7 +61,7 @@ public class CampaniaController {
         if (file1 != null && file1.exists() && file2 != null && file2.exists()) {
             System.out.println("[CONTROLLER] Creando archivo ZIP...");
             long zipStart = System.currentTimeMillis();
-            File zipFile = new File("rangos_reportes.zip");
+            File zipFile = new File("rangos_reportes_" + UUID.randomUUID() + ".zip");
             try (FileOutputStream fos = new FileOutputStream(zipFile);
                  ZipOutputStream zipOut = new ZipOutputStream(fos)) {
 
@@ -111,7 +112,7 @@ public class CampaniaController {
             ZipEntry zipEntry = new ZipEntry(file.getName());
             zipOut.putNextEntry(zipEntry);
 
-            byte[] bytes = new byte[1024];
+            byte[] bytes = new byte[8192];
             int length;
             while ((length = fis.read(bytes)) >= 0) {
                 zipOut.write(bytes, 0, length);
