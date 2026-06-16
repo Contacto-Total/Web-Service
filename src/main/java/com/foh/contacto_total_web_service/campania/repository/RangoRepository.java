@@ -1,12 +1,10 @@
 package com.foh.contacto_total_web_service.campania.repository;
 import com.foh.contacto_total_web_service.campania.dto.GetFiltersToGenerateFileRequest;
 import com.foh.contacto_total_web_service.campania.dto.RangoRequest;
-import com.foh.contacto_total_web_service.campania.util.RangoConditionBuilder;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
 import org.springframework.stereotype.Repository;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -39,8 +37,8 @@ public class RangoRepository {
         System.out.println("Campaign Name: " + request.getCampaignName());
 
         String columnaFiltro = obtenerColumnaFiltro(request.getFilterType());
-        List<String> subconsultas = construirSubconsultas(request, columnaFiltro);
-        String consultaFinal = construirConsultaPrincipal(subconsultas, columnaFiltro, request);
+        System.out.println("Columna de filtro seleccionada: " + columnaFiltro);
+        String consultaFinal = construirConsultaPrincipal(columnaFiltro, request);
 
         System.out.println("========== CONSULTA FINAL RANGOS ==========");
         System.out.println(consultaFinal);
@@ -51,119 +49,76 @@ public class RangoRepository {
     }
 
     /**
-     * Construye las subconsultas para cada tipo de contacto
-     */
-    private List<String> construirSubconsultas(
-            GetFiltersToGenerateFileRequest request,
-            String columnaFiltro
-    ) {
-        List<String> subconsultas = new ArrayList<>();
-        String baseTipi = construirBaseTipi(request, true);
-
-        System.out.println("Columna de filtro seleccionada: " + columnaFiltro);
-
-        // Subconsulta para contacto directo
-        if (tieneElementos(request.getDirectContactRanges())) {
-            String subconsulta = construirSubconsulta(
-                    1, // bloque
-                    request.getDirectContactRanges(),
-                    CONTACTO_DIRECTO,
-                    columnaFiltro,
-                    "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')",
-                    baseTipi
-            );
-            subconsultas.add(subconsulta);
-        }
-
-        // Subconsulta para contacto indirecto
-        if (tieneElementos(request.getIndirectContactRanges())) {
-            String subconsulta = construirSubconsulta(
-                    2, // bloque
-                    request.getIndirectContactRanges(),
-                    CONTACTO_INDIRECTO,
-                    columnaFiltro,
-                    "TIPI IN ('CONTACTO CON TERCEROS')",
-                    baseTipi
-            );
-            subconsultas.add(subconsulta);
-        }
-
-        // Subconsulta para promesas rotas
-        if (tieneElementos(request.getBrokenPromisesRanges())) {
-            String condicionPagadasHoy = construirCondicionPagadasHoy(request.getExcluirPagadasHoy());
-            String condicionesExtra = construirCondicionesPromesasRotas(condicionPagadasHoy);
-            String subconsulta = construirSubconsulta(
-                    3, // bloque
-                    request.getBrokenPromisesRanges(),
-                    PROMESA_ROTA,
-                    columnaFiltro,
-                    condicionesExtra,
-                    baseTipi
-            );
-            subconsultas.add(subconsulta);
-        }
-
-        // Subconsulta para no contactados
-        if (tieneElementos(request.getNotContactedRanges())) {
-            String condicionesNoContactado =
-                    "(TIPI IN ('MSJ VOZ - SMS - WSP - BAJO PUERTA', 'NO CONTESTA', 'APAGADO', " +
-                            "'EQUIVOCADO', 'FUERA DE SERVICIO - NO EXISTE') OR TIPI IS NULL)";
-            String subconsulta = construirSubconsulta(
-                    4, // bloque
-                    request.getNotContactedRanges(),
-                    NO_CONTACTADO,
-                    columnaFiltro,
-                    condicionesNoContactado,
-                    baseTipi
-            );
-            subconsultas.add(subconsulta);
-        }
-
-        return subconsultas;
-    }
-
-
-    /**
-     * Construye una subconsulta individual para un tipo específico de contacto
-     */
-    private String construirSubconsulta(
-            int numeroBloque,
-            List<RangoRequest> rangos,
-            String tipoRango,
-            String columnaMontos,
-            String condicionesAdicionales,
-            String baseTipi
-    ) {
-        String condicionesRango = RangoConditionBuilder.buildRangoConditions(
-                rangos, tipoRango, columnaMontos);
-
-        return """
-            SELECT %d AS BLOQUE, b.*
-              FROM (
-                   SELECT a.*,
-                          %s
-                     FROM (%s) a
-              ) b
-             WHERE b.rango IS NOT NULL
-               AND CAST(%s AS DECIMAL(10, 2)) > 0
-               AND %s
-            """.formatted(numeroBloque, condicionesRango, baseTipi, columnaMontos, condicionesAdicionales);
-    }
-
-    /**
      * Construye la consulta principal que une todas las subconsultas
      */
-    private String construirConsultaPrincipal(List<String> subconsultas, String columnaFiltro, GetFiltersToGenerateFileRequest request) {
-        String unionSubconsultas = String.join(" UNION ALL ", subconsultas);
+    private String construirConsultaPrincipal(String columnaFiltro, GetFiltersToGenerateFileRequest request) {
+        String baseTipi = construirBaseTipi(request, true);
+        String bloqueCase = construirBloqueCase(request);
+        String rangoCase = construirRangoCase(request, columnaFiltro);
+
         return """
             SELECT DOCUMENTO,
                    COALESCE(TELEFONOCELULAR, telefonodomicilio, telefonolaboral, telfreferencia1, telfreferencia2),
                    TIPI
               FROM (
-                   %s
+                   SELECT %s AS BLOQUE,
+                          a.*,
+                          %s
+                     FROM (%s) a
                ) B
+             WHERE B.RANGO IS NOT NULL
              ORDER BY BLOQUE, %s DESC;
-            """.formatted(unionSubconsultas, columnaFiltro);
+            """.formatted(bloqueCase, rangoCase, baseTipi, columnaFiltro);
+    }
+
+    private String construirBloqueCase(GetFiltersToGenerateFileRequest request) {
+        StringBuilder bloqueCase = new StringBuilder("CASE ");
+        if (tieneElementos(request.getDirectContactRanges())) {
+            bloqueCase.append("WHEN TIPI IN ('CONTACTO CON TITULAR O ENCARGADO') THEN 1 ");
+        }
+        if (tieneElementos(request.getIndirectContactRanges())) {
+            bloqueCase.append("WHEN TIPI IN ('CONTACTO CON TERCEROS') THEN 2 ");
+        }
+        if (tieneElementos(request.getBrokenPromisesRanges())) {
+            bloqueCase.append("WHEN ").append(construirCondicionesPromesasRotas(construirCondicionPagadasHoy(request.getExcluirPagadasHoy()))).append(" THEN 3 ");
+        }
+        if (tieneElementos(request.getNotContactedRanges())) {
+            bloqueCase.append("WHEN (TIPI IN ('MSJ VOZ - SMS - WSP - BAJO PUERTA', 'NO CONTESTA', 'APAGADO', 'EQUIVOCADO', 'FUERA DE SERVICIO - NO EXISTE') OR TIPI IS NULL) THEN 4 ");
+        }
+        bloqueCase.append("END");
+        return bloqueCase.toString();
+    }
+
+    private String construirRangoCase(GetFiltersToGenerateFileRequest request, String columnaFiltro) {
+        StringBuilder rangoCase = new StringBuilder("CAST(CASE ");
+        agregarRangosAlCase(rangoCase, request.getDirectContactRanges(), CONTACTO_DIRECTO, columnaFiltro,
+                "TIPI IN ('CONTACTO CON TITULAR O ENCARGADO')");
+        agregarRangosAlCase(rangoCase, request.getIndirectContactRanges(), CONTACTO_INDIRECTO, columnaFiltro,
+                "TIPI IN ('CONTACTO CON TERCEROS')");
+        agregarRangosAlCase(rangoCase, request.getBrokenPromisesRanges(), PROMESA_ROTA, columnaFiltro,
+                construirCondicionesPromesasRotas(construirCondicionPagadasHoy(request.getExcluirPagadasHoy())));
+        agregarRangosAlCase(rangoCase, request.getNotContactedRanges(), NO_CONTACTADO, columnaFiltro,
+                "(TIPI IN ('MSJ VOZ - SMS - WSP - BAJO PUERTA', 'NO CONTESTA', 'APAGADO', 'EQUIVOCADO', 'FUERA DE SERVICIO - NO EXISTE') OR TIPI IS NULL)");
+        rangoCase.append("END AS CHAR(100)) AS RANGO");
+        return rangoCase.toString();
+    }
+
+    private void agregarRangosAlCase(StringBuilder rangoCase, List<RangoRequest> rangos, String tipoRango, String columnaFiltro, String condicionTipo) {
+        if (!tieneElementos(rangos)) {
+            return;
+        }
+
+        for (RangoRequest rango : rangos) {
+            rangoCase.append("WHEN ").append(condicionTipo)
+                    .append(" AND ").append(columnaFiltro).append(" > ").append(rango.getMin());
+
+            if ("+".equals(rango.getMax())) {
+                rangoCase.append(" THEN '").append(tipoRango).append(" ").append(rango.getMin()).append(" - +' ");
+            } else {
+                rangoCase.append(" AND ").append(columnaFiltro).append(" <= ").append(rango.getMax())
+                        .append(" THEN '").append(tipoRango).append(" ").append(rango.getMin()).append(" - ").append(rango.getMax()).append("' ");
+            }
+        }
     }
 
     private String construirCondicionesBase(GetFiltersToGenerateFileRequest request, boolean incluirFiltrosTelefono) {
